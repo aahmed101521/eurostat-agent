@@ -84,7 +84,12 @@ class EurostatClient:
             expected_content_type=("application/vnd.sdmx.structure+xml"),
         )
 
-        return parse_data_structure(xml)
+        try:
+            return parse_data_structure(xml)
+        except ValueError as exc:
+            raise EurostatClientError(
+                f"Eurostat returned an invalid SDMX structure response: {exc}"
+            ) from exc
 
     def get_codelist(
         self,

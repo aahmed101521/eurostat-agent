@@ -150,3 +150,24 @@ def test_client_context_manager_closes_internal_http_client() -> None:
         assert not client._http_client.is_closed
 
     assert client._http_client.is_closed
+
+
+def test_get_structure_rejects_invalid_sdmx_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            text="<Structure></Structure>",
+            headers={
+                "Content-Type": ("application/vnd.sdmx.structure+xml;version=3.0.0")
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    client = EurostatClient(http_client=httpx.Client(transport=transport))
+
+    with pytest.raises(
+        EurostatClientError,
+        match="invalid SDMX structure response",
+    ):
+        client.get_structure("DEMO_PJAN")
