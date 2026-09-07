@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import httpx
 
+from eurostat_agent.data import Observation, parse_sdmx_csv
 from eurostat_agent.metadata import (
     Codelist,
     CodelistRef,
@@ -28,7 +29,7 @@ class EurostatClientError(RuntimeError):
 
 
 class EurostatClient:
-    """Deterministic HTTP client for Eurostat SDMX metadata."""
+    """Deterministic HTTP client for Eurostat SDMX retrieval."""
 
     BASE_URL = "https://ec.europa.eu/eurostat/api/dissemination/sdmx/3.0"
 
@@ -80,17 +81,47 @@ class EurostatClient:
 
         return parse_codelist(xml)
 
+    def fetch_series(
+        self,
+        dataset_code: str,
+        filters: dict[str, str],
+    ) -> tuple[Observation, ...]:
+        """Retrieve filtered Eurostat observations as typed objects."""
+        url = f"{self.BASE_URL}/data/dataflow/ESTAT/{dataset_code}/1.0"
+
+        params = {f"c[{dimension}]": code for dimension, code in filters.items()}
+
+        params.update(
+            {
+                "attributes": "none",
+                "measures": "all",
+                "compress": "false",
+            }
+        )
+
+        csv_text = self._get_text(
+            url,
+            params=params,
+            headers={
+                "Accept": ("application/vnd.sdmx.data+csv;version=2.0.0;labels=id")
+            },
+        )
+
+        return parse_sdmx_csv(csv_text)
+
     def _get_text(
         self,
         url: str,
         *,
         params: dict[str, str],
+        headers: dict[str, str] | None = None,
     ) -> str:
         """Perform one validated HTTP GET request."""
         try:
             response = self._http_client.get(
                 url,
                 params=params,
+                headers=headers,
             )
             response.raise_for_status()
         except httpx.HTTPError as exc:

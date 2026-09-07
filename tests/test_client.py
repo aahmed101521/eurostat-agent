@@ -80,3 +80,43 @@ def test_client_raises_clear_error_on_http_failure() -> None:
         match="Eurostat request failed",
     ):
         client.get_structure("DOES_NOT_EXIST")
+
+
+def test_fetch_series_parses_filtered_observations() -> None:
+    csv_text = (FIXTURES / "demo_pjan_observation.csv").read_text(encoding="utf-8-sig")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/data/dataflow/ESTAT/DEMO_PJAN/1.0")
+        assert request.url.params["c[freq]"] == "A"
+        assert request.url.params["c[age]"] == "Y20"
+        assert request.url.params["c[sex]"] == "F"
+        assert request.url.params["c[geo]"] == "BE"
+        assert request.url.params["c[TIME_PERIOD]"] == "2024"
+        assert request.url.params["attributes"] == "none"
+        assert request.url.params["measures"] == "all"
+        assert request.url.params["compress"] == "false"
+
+        return httpx.Response(
+            status_code=200,
+            text=csv_text,
+            headers={"Content-Type": ("application/vnd.sdmx.data+csv;version=2.0.0")},
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    client = EurostatClient(http_client=httpx.Client(transport=transport))
+
+    observations = client.fetch_series(
+        dataset_code="DEMO_PJAN",
+        filters={
+            "freq": "A",
+            "age": "Y20",
+            "sex": "F",
+            "geo": "BE",
+            "TIME_PERIOD": "2024",
+        },
+    )
+
+    assert len(observations) == 1
+    assert observations[0].value == 65231.0
+    assert observations[0].dimensions["unit"] == "NR"
