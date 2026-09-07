@@ -43,10 +43,30 @@ class EurostatClient:
         Args:
             http_client: Optional HTTPX client, primarily for testing.
         """
+        self._owns_http_client = http_client is None
+
         self._http_client = http_client or httpx.Client(
             timeout=30.0,
             headers={"Accept": ("application/vnd.sdmx.structure+xml;version=3.0.0")},
         )
+
+    def close(self) -> None:
+        """Close HTTP resources owned by this client."""
+        if self._owns_http_client:
+            self._http_client.close()
+
+    def __enter__(self) -> EurostatClient:
+        """Enter the client context manager."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: object,
+        exc_value: object,
+        traceback: object,
+    ) -> None:
+        """Exit the client context manager and release resources."""
+        self.close()
 
     def get_structure(
         self,

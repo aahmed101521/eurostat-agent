@@ -141,3 +141,12 @@ def test_get_structure_rejects_unexpected_content_type() -> None:
         match="unexpected Content-Type",
     ):
         client.get_structure("DEMO_PJAN")
+
+
+def test_client_context_manager_closes_internal_http_client() -> None:
+    client = EurostatClient()
+
+    with client:
+        assert not client._http_client.is_closed
+
+    assert client._http_client.is_closed
