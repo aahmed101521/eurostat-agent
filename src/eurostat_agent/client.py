@@ -61,6 +61,7 @@ class EurostatClient:
                 "references": "children",
                 "compress": "false",
             },
+            expected_content_type=("application/vnd.sdmx.structure+xml"),
         )
 
         return parse_data_structure(xml)
@@ -77,6 +78,7 @@ class EurostatClient:
             params={
                 "compress": "false",
             },
+            expected_content_type=("application/vnd.sdmx.structure+xml"),
         )
 
         return parse_codelist(xml)
@@ -105,6 +107,7 @@ class EurostatClient:
             headers={
                 "Accept": ("application/vnd.sdmx.data+csv;version=2.0.0;labels=id")
             },
+            expected_content_type=("application/vnd.sdmx.data+csv"),
         )
 
         return parse_sdmx_csv(csv_text)
@@ -115,6 +118,7 @@ class EurostatClient:
         *,
         params: dict[str, str],
         headers: dict[str, str] | None = None,
+        expected_content_type: str | None = None,
     ) -> str:
         """Perform one validated HTTP GET request."""
         try:
@@ -126,5 +130,18 @@ class EurostatClient:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise EurostatClientError(f"Eurostat request failed: {exc}") from exc
+
+        if expected_content_type is not None:
+            content_type = response.headers.get(
+                "Content-Type",
+                "",
+            )
+
+            if expected_content_type not in content_type:
+                raise EurostatClientError(
+                    "Eurostat returned unexpected Content-Type: "
+                    f"{content_type!r}; expected "
+                    f"{expected_content_type!r}."
+                )
 
         return response.text

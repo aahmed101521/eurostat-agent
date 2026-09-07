@@ -120,3 +120,24 @@ def test_fetch_series_parses_filtered_observations() -> None:
     assert len(observations) == 1
     assert observations[0].value == 65231.0
     assert observations[0].dimensions["unit"] == "NR"
+
+
+def test_get_structure_rejects_unexpected_content_type() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            text="<html>Not SDMX</html>",
+            headers={
+                "Content-Type": "text/html",
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    client = EurostatClient(http_client=httpx.Client(transport=transport))
+
+    with pytest.raises(
+        EurostatClientError,
+        match="unexpected Content-Type",
+    ):
+        client.get_structure("DEMO_PJAN")
