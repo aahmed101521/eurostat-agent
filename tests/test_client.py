@@ -171,3 +171,58 @@ def test_get_structure_rejects_invalid_sdmx_payload() -> None:
         match="invalid SDMX structure response",
     ):
         client.get_structure("DEMO_PJAN")
+
+
+def test_get_codelist_rejects_invalid_sdmx_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            text="<Structure></Structure>",
+            headers={
+                "Content-Type": ("application/vnd.sdmx.structure+xml;version=3.0.0")
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    client = EurostatClient(http_client=httpx.Client(transport=transport))
+
+    with pytest.raises(
+        EurostatClientError,
+        match="invalid SDMX codelist response",
+    ):
+        client.get_codelist(
+            CodelistRef(
+                agency="ESTAT",
+                id="SEX",
+                version="2.0",
+            )
+        )
+
+
+def test_fetch_series_rejects_invalid_sdmx_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            text=(
+                "STRUCTURE,STRUCTURE_ID,freq,TIME_PERIOD,OBS_VALUE\n"
+                "dataflow,INVALID,A,2024,\n"
+            ),
+            headers={"Content-Type": ("application/vnd.sdmx.data+csv;version=2.0.0")},
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    client = EurostatClient(http_client=httpx.Client(transport=transport))
+
+    with pytest.raises(
+        EurostatClientError,
+        match="invalid SDMX data response",
+    ):
+        client.fetch_series(
+            dataset_code="DEMO_PJAN",
+            filters={
+                "freq": "A",
+                "TIME_PERIOD": "2024",
+            },
+        )

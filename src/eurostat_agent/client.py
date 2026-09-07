@@ -106,7 +106,12 @@ class EurostatClient:
             expected_content_type=("application/vnd.sdmx.structure+xml"),
         )
 
-        return parse_codelist(xml)
+        try:
+            return parse_codelist(xml)
+        except ValueError as exc:
+            raise EurostatClientError(
+                f"Eurostat returned an invalid SDMX codelist response: {exc}"
+            ) from exc
 
     def fetch_series(
         self,
@@ -135,7 +140,12 @@ class EurostatClient:
             expected_content_type=("application/vnd.sdmx.data+csv"),
         )
 
-        return parse_sdmx_csv(csv_text)
+        try:
+            return parse_sdmx_csv(csv_text)
+        except ValueError as exc:
+            raise EurostatClientError(
+                f"Eurostat returned an invalid SDMX data response: {exc}"
+            ) from exc
 
     def _get_text(
         self,
