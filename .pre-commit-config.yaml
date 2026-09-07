@@ -12,3 +12,5 @@ repos:
       - id: mypy
         args: [src]
         pass_filenames: false
+        additional_dependencies:
+          - "httpx>=0.28.1,<1.0"
