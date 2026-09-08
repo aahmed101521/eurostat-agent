@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nt:tree xmlns:nt="urn:eu.europa.ec.eurostat.navtree"
+         creationDate="20260907T2100">
+  <nt:branch>
+    <nt:title language="en">Database by themes</nt:title>
+    <nt:code>data</nt:code>
+    <nt:children>
+      <nt:branch>
+        <nt:title language="en">Science, technology, digital society</nt:title>
+        <nt:code>science</nt:code>
+        <nt:children>
+          <nt:leaf type="dataset">
+            <nt:title language="en">Individuals - internet activities</nt:title>
+            <nt:code>isoc_ci_ac_i</nt:code>
+            <nt:lastUpdate>28.08.2026</nt:lastUpdate>
+            <nt:lastModified>28.08.2026</nt:lastModified>
+            <nt:dataStart>2010</nt:dataStart>
+            <nt:dataEnd>2026</nt:dataEnd>
+            <nt:values>123456</nt:values>
+            <nt:shortDescription language="en">
+              Internet activities performed by individuals.
+            </nt:shortDescription>
+          </nt:leaf>
+
+          <nt:leaf type="table">
+            <nt:title language="en">Economic sentiment indicator</nt:title>
+            <nt:code>teibs010</nt:code>
+            <nt:lastUpdate>28.08.2026</nt:lastUpdate>
+            <nt:lastModified>28.08.2026</nt:lastModified>
+            <nt:dataStart>2025-09</nt:dataStart>
+            <nt:dataEnd>2026-08</nt:dataEnd>
+            <nt:values>404</nt:values>
+            <nt:shortDescription language="en">
+              Composite indicator tracking economic sentiment.
+            </nt:shortDescription>
+          </nt:leaf>
+        </nt:children>
+      </nt:branch>
+    </nt:children>
+  </nt:branch>
+
+  <nt:branch>
+    <nt:title language="en">Cross cutting topics</nt:title>
+    <nt:code>cross</nt:code>
+    <nt:children>
+      <nt:branch>
+        <nt:title language="en">Children and youth</nt:title>
+        <nt:code>children</nt:code>
+        <nt:children>
+          <nt:branch>
+            <nt:title language="en">Youth</nt:title>
+            <nt:code>youth</nt:code>
+            <nt:children>
+              <nt:leaf type="dataset">
+                <nt:title language="en">Individuals - internet activities</nt:title>
+                <nt:code>isoc_ci_ac_i</nt:code>
+                <nt:lastUpdate>28.08.2026</nt:lastUpdate>
+                <nt:lastModified>28.08.2026</nt:lastModified>
+                <nt:dataStart>2010</nt:dataStart>
+                <nt:dataEnd>2026</nt:dataEnd>
+                <nt:values>123456</nt:values>
+                <nt:shortDescription language="en">
+                  Internet activities performed by individuals.
+                </nt:shortDescription>
+              </nt:leaf>
+            </nt:children>
+          </nt:branch>
+        </nt:children>
+      </nt:branch>
+    </nt:children>
+  </nt:branch>
+</nt:tree>

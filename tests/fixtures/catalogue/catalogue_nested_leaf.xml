@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nt:tree xmlns:nt="urn:eu.europa.ec.eurostat.navtree"
+         creationDate="20260907T2100">
+  <nt:branch>
+    <nt:title language="en">Database by themes</nt:title>
+    <nt:code>data</nt:code>
+    <nt:children>
+      <nt:leaf type="dataset">
+        <nt:title language="en">
+          Economic sentiment and confidence indicators by sector
+        </nt:title>
+        <nt:code>ei_bssi_m_r2</nt:code>
+
+        <nt:children>
+          <nt:leaf type="table">
+            <nt:title language="en">
+              Economic sentiment indicator
+            </nt:title>
+            <nt:code>teibs010</nt:code>
+          </nt:leaf>
+        </nt:children>
+      </nt:leaf>
+    </nt:children>
+  </nt:branch>
+</nt:tree>
