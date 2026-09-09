@@ -62,6 +62,12 @@ The project currently uses two complementary Eurostat interfaces:
 * the **Eurostat Catalogue API** for dataset discovery;
 * the **Eurostat SDMX 3.0 API** for exact statistical structure, codelists, and observations.
 
+### Explicit ambiguity
+
+Natural-language resolution must not silently choose an arbitrary statistical category when more than one official code is plausible.
+
+Ambiguous, unknown, or structurally invalid requests are rejected explicitly rather than guessed.
+
 ### Test-driven development
 
 Core behavior is specified with tests before implementation wherever practical.
@@ -79,7 +85,7 @@ The repository uses:
 
 ## Current status
 
-The first three development stages are implemented.
+The first four development stages are implemented.
 
 ### Stage 1 — Project foundation
 
@@ -130,6 +136,30 @@ Implemented:
 * HTTP failure handling;
 * content-type validation;
 * and a public `search_datasets(...)` interface.
+
+### Stage 4 — Natural-language code resolution
+
+Implemented deterministic translation from user-facing dimension values to official Eurostat codes.
+
+The resolver:
+
+* works from official versioned Eurostat codelists;
+* supports exact official-code matching;
+* supports exact label matching;
+* supports case-insensitive normalized label matching;
+* supports a small set of explicitly controlled label variants;
+* resolves natural-language values within the context of a dataset dimension;
+* retrieves the exact codelist referenced by the dataset structure;
+* validates codelist agency, identifier, and version;
+* rejects unknown dimensions;
+* rejects dimensions without codelists;
+* rejects mismatched codelists;
+* detects ambiguous label matches;
+* rejects unknown values rather than guessing;
+* preserves the official code and label;
+* and records the deterministic match type.
+
+The implementation deliberately avoids general fuzzy matching and unrestricted linguistic guessing.
 
 ---
 
@@ -273,6 +303,173 @@ The ranking is derived from deterministic catalogue metadata rather than an LLM-
 
 ---
 
+## Code-resolution architecture
+
+Once a dataset has been identified, natural-language dimension values can be translated into exact official Eurostat codes.
+
+```text
+dataset code
+    │
+    ▼
+get_structure(...)
+    │
+    ▼
+find requested dimension
+    │
+    ▼
+versioned CodelistRef
+    │
+    ▼
+get_codelist(...)
+    │
+    ▼
+official Codelist
+    │
+    ▼
+deterministic resolution
+    │
+    ▼
+CodeResolution
+```
+
+The resolution logic is kept separate from HTTP retrieval.
+
+The current internal layers are:
+
+```text
+resolve_code(...)
+        │
+        └── resolve text against one Codelist
+
+resolve_dimension_code(...)
+        │
+        └── validate and resolve within one DataStructure dimension
+
+resolve_dataset_dimension_code(...)
+        │
+        └── retrieve structure and codelist, then resolve
+```
+
+This separation allows resolution behavior to be tested without network access while still supporting live Eurostat metadata retrieval through `EurostatClient`.
+
+---
+
+## Example: resolving natural-language dimension values
+
+```python
+from eurostat_agent.client import EurostatClient
+from eurostat_agent.resolution import resolve_dataset_dimension_code
+
+
+with EurostatClient() as client:
+    result = resolve_dataset_dimension_code(
+        client,
+        "DEMO_PJAN",
+        "geo",
+        "Belgium",
+    )
+
+print(result.code.id)
+print(result.code.label)
+print(result.match_type)
+```
+
+This resolves against the official Eurostat codelist and produces:
+
+```text
+BE
+Belgium
+exact_label
+```
+
+The same deterministic path has been verified with live `DEMO_PJAN` metadata for values such as:
+
+```text
+Belgium → BE
+female  → F
+20      → Y20
+number  → NR
+annual  → A
+```
+
+These values are not mapped through a manually maintained dictionary of Eurostat codes. The official codelists remain the source of truth.
+
+---
+
+## Resolution philosophy
+
+Code resolution follows an ordered deterministic strategy.
+
+```text
+exact official code
+        ↓
+exact official label
+        ↓
+normalized official label
+        ↓
+controlled label variant
+```
+
+Each successful result records how the match was obtained.
+
+Examples of match types include:
+
+```text
+exact_code
+exact_label
+normalized_label
+label_variant
+```
+
+The resolver intentionally does not use general fuzzy matching.
+
+Controlled variants are introduced only where the transformation is narrow and defensible. For example:
+
+```text
+female → Females
+20     → 20 years
+```
+
+The resolver also avoids transformations that would change the statistical meaning.
+
+For example:
+
+```text
+100
+```
+
+is not automatically interpreted as:
+
+```text
+100 years or over
+```
+
+because an exact age and an open-ended age category are not equivalent.
+
+Similarly, generic suffix rules are avoided because they could create unrelated matches.
+
+---
+
+## Ambiguity and failure behavior
+
+Resolution failures are explicit.
+
+The resolver rejects cases such as:
+
+```text
+unknown dimension
+dimension without a codelist
+wrong codelist for the requested dimension
+unknown value
+multiple equally valid label matches
+```
+
+This is intentional.
+
+A provenance-first system should fail transparently when a deterministic resolution cannot be justified rather than silently selecting the first available candidate.
+
+---
+
 ## Project architecture
 
 The intended full architecture is:
@@ -305,11 +502,13 @@ Natural-language answer
 
 The LLM layer is intentionally downstream of the deterministic statistical infrastructure.
 
+The public agent-facing tool names shown above represent the intended final interface. Internal implementation functions may use more explicit names where this improves separation of responsibilities.
+
 ---
 
 ## Planned deterministic tools
 
-The target tool interface is:
+The target agent-facing tool interface is:
 
 ```text
 search_datasets(query)
@@ -319,9 +518,24 @@ fetch_series(dataset_code, filters)
 compute(operation, frames)
 ```
 
-`search_datasets(...)`, structure retrieval, and deterministic series retrieval are already represented by the current implementation.
+The current implementation already provides the deterministic foundations for:
 
-Code resolution, full provenance assembly, and deterministic computation are subsequent development stages.
+```text
+search_datasets(...)
+get_structure(...)
+resolve_code(...)
+fetch_series(...)
+```
+
+At the implementation level, code resolution is currently exposed through:
+
+```text
+resolve_code(codelist, text)
+resolve_dimension_code(structure, dimension_id, codelist, text)
+resolve_dataset_dimension_code(client, dataset_code, dimension_id, text)
+```
+
+The remaining stages will assemble these deterministic components into provenance-aware answer generation and later agent orchestration.
 
 ---
 
@@ -332,7 +546,7 @@ Code resolution, full provenance assembly, and deterministic computation are sub
 | 1     | Project foundation and quality tooling           | Complete |
 | 2     | Eurostat SDMX client and metadata/data retrieval | Complete |
 | 3     | Dataset catalogue search and indexing            | Complete |
-| 4     | Natural-language code resolution                 | Planned  |
+| 4     | Natural-language code resolution                 | Complete |
 | 5     | Provenance and deterministic answer path         | Planned  |
 | 6     | Agent control loop                               | Planned  |
 | 7     | Benchmark and evaluation framework               | Planned  |
@@ -386,6 +600,12 @@ git diff --check
 
 The development policy is to keep these checks green before changes are merged into `main`.
 
+At the completion of Stage 4, the repository test suite contains:
+
+```text
+64 passing tests
+```
+
 ---
 
 ## Repository structure
@@ -399,12 +619,14 @@ eurostat-agent/
 │       ├── client.py
 │       ├── config.py
 │       ├── data.py
-│       └── metadata.py
+│       ├── metadata.py
+│       └── resolution.py
 ├── tests/
 │   ├── fixtures/
 │   ├── test_catalogue.py
 │   ├── test_catalogue_client.py
 │   ├── test_client.py
+│   ├── test_code_resolution.py
 │   ├── test_config.py
 │   ├── test_data.py
 │   ├── test_dataset_search.py
@@ -423,6 +645,7 @@ The current project intentionally focuses on:
 * Eurostat;
 * official published statistics;
 * deterministic retrieval;
+* deterministic code resolution;
 * deterministic computation;
 * provenance;
 * reproducibility;
