@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from eurostat_agent.client import EurostatClient, EurostatClientError
-from eurostat_agent.metadata import CodelistRef
+from eurostat_agent.metadata import CodelistRef, DatasetMetadata
 
 FIXTURES = Path(__file__).parent / "fixtures" / "sdmx"
 
@@ -226,3 +226,32 @@ def test_fetch_series_rejects_invalid_sdmx_payload() -> None:
                 "TIME_PERIOD": "2024",
             },
         )
+
+
+def test_get_dataset_metadata_parses_eurostat_response() -> None:
+    xml = (FIXTURES / "demo_pjan_structure.xml").read_text(encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/structure/dataflow/ESTAT/DEMO_PJAN/1.0")
+        assert request.url.params["references"] == "children"
+
+        return httpx.Response(
+            status_code=200,
+            text=xml,
+            headers={
+                "Content-Type": ("application/vnd.sdmx.structure+xml;version=3.0.0")
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    client = EurostatClient(http_client=httpx.Client(transport=transport))
+
+    metadata = client.get_dataset_metadata("DEMO_PJAN")
+
+    assert metadata == DatasetMetadata(
+        id="DEMO_PJAN",
+        agency="ESTAT",
+        version="1.0",
+        data_updated_at="2026-08-14T23:00:00+0200",
+    )
