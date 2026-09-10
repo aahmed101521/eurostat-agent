@@ -1,9 +1,13 @@
 from pathlib import Path
 
+import pytest
+
 from eurostat_agent.metadata import (
     CodelistRef,
+    DatasetMetadata,
     parse_codelist,
     parse_data_structure,
+    parse_dataset_metadata,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "sdmx"
@@ -61,3 +65,34 @@ def test_parse_sex_codelist() -> None:
     assert codes["M"] == "Males"
     assert codes["F"] == "Females"
     assert codes["UNK"] == "Unknown"
+
+
+def test_parse_demo_pjan_dataset_metadata() -> None:
+    xml = (FIXTURES / "demo_pjan_structure.xml").read_text(encoding="utf-8")
+
+    metadata = parse_dataset_metadata(xml)
+
+    assert metadata == DatasetMetadata(
+        id="DEMO_PJAN",
+        agency="ESTAT",
+        version="1.0",
+        data_updated_at="2026-08-14T23:00:00+0200",
+    )
+
+
+def test_parse_dataset_metadata_requires_data_update_timestamp() -> None:
+    xml = """
+    <Structure>
+        <Dataflow
+            id="DEMO_PJAN"
+            agencyID="ESTAT"
+            version="1.0"
+        />
+    </Structure>
+    """
+
+    with pytest.raises(
+        ValueError,
+        match="DISSEMINATION_TIMESTAMP_DATA",
+    ):
+        parse_dataset_metadata(xml)

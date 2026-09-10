@@ -48,6 +48,16 @@ class DataStructure:
 
 
 @dataclass(frozen=True)
+class DatasetMetadata:
+    """Dataset-level provenance metadata from an SDMX dataflow."""
+
+    id: str
+    agency: str
+    version: str
+    data_updated_at: str
+
+
+@dataclass(frozen=True)
 class Code:
     """One code and human-readable label from an SDMX codelist."""
 
@@ -101,6 +111,34 @@ def _find_first(
         ),
         None,
     )
+
+
+def _find_annotation_title(
+    element: ElementTree.Element,
+    annotation_type: str,
+) -> str | None:
+    """Return the title for one annotation type."""
+    for annotation in element.iter():
+        if _local_name(annotation.tag) != "Annotation":
+            continue
+
+        type_element = _find_first(annotation, "AnnotationType")
+
+        if (
+            type_element is None
+            or type_element.text is None
+            or type_element.text.strip() != annotation_type
+        ):
+            continue
+
+        title_element = _find_first(annotation, "AnnotationTitle")
+
+        if title_element is None or title_element.text is None:
+            return None
+
+        return title_element.text.strip()
+
+    return None
 
 
 def _parse_codelist_ref(
@@ -164,6 +202,31 @@ def parse_data_structure(xml: str) -> DataStructure:
         version=_require_attribute(dsd, "version"),
         dimensions=tuple(dimensions),
         measure_id=_require_attribute(measure, "id"),
+    )
+
+
+def parse_dataset_metadata(xml: str) -> DatasetMetadata:
+    """Parse dataset-level provenance metadata from an SDMX Dataflow."""
+    root = ElementTree.fromstring(xml)
+
+    dataflow = _find_first(root, "Dataflow")
+
+    if dataflow is None:
+        raise ValueError("SDMX response does not contain a Dataflow.")
+
+    data_updated_at = _find_annotation_title(
+        dataflow,
+        "DISSEMINATION_TIMESTAMP_DATA",
+    )
+
+    if data_updated_at is None:
+        raise ValueError("Dataflow does not contain DISSEMINATION_TIMESTAMP_DATA.")
+
+    return DatasetMetadata(
+        id=_require_attribute(dataflow, "id"),
+        agency=_require_attribute(dataflow, "agencyID"),
+        version=_require_attribute(dataflow, "version"),
+        data_updated_at=data_updated_at,
     )
 
 

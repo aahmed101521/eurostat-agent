@@ -18,9 +18,11 @@ from eurostat_agent.data import Observation, parse_sdmx_csv
 from eurostat_agent.metadata import (
     Codelist,
     CodelistRef,
+    DatasetMetadata,
     DataStructure,
     parse_codelist,
     parse_data_structure,
+    parse_dataset_metadata,
 )
 
 
@@ -89,6 +91,29 @@ class EurostatClient:
         except ValueError as exc:
             raise EurostatClientError(
                 f"Eurostat returned an invalid SDMX structure response: {exc}"
+            ) from exc
+
+    def get_dataset_metadata(
+        self,
+        dataset_code: str,
+    ) -> DatasetMetadata:
+        """Retrieve dataset-level provenance metadata for one dataset."""
+        url = f"{self.BASE_URL}/structure/dataflow/ESTAT/{dataset_code}/1.0"
+
+        xml = self._get_text(
+            url,
+            params={
+                "references": "children",
+                "compress": "false",
+            },
+            expected_content_type=("application/vnd.sdmx.structure+xml"),
+        )
+
+        try:
+            return parse_dataset_metadata(xml)
+        except ValueError as exc:
+            raise EurostatClientError(
+                f"Eurostat returned invalid dataset metadata: {exc}"
             ) from exc
 
     def get_codelist(
