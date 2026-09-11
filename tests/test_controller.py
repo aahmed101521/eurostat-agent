@@ -4,7 +4,9 @@ import pytest
 
 from eurostat_agent.controller import (
     StructuredQuestion,
+    answer_question,
     execute_question,
+    plan_question,
     resolve_question_filters,
     retrieve_question,
 )
@@ -617,3 +619,85 @@ def test_execute_question_resolves_complete_structured_request() -> None:
         ("sex", "F"),
         ("unit", "NR"),
     )
+
+
+def test_plan_question_uses_planner_to_create_structured_question() -> None:
+    expected = StructuredQuestion(
+        dataset_code="DEMO_PJAN",
+        filters={
+            "geo": "Belgium",
+            "TIME_PERIOD": "2024",
+        },
+        operation="none",
+    )
+
+    class FakePlanner:
+        def plan(self, question: str) -> StructuredQuestion:
+            assert question == "What was the population in Belgium in 2024?"
+            return expected
+
+    result = plan_question(
+        FakePlanner(),
+        "What was the population in Belgium in 2024?",
+    )
+
+    assert result == expected
+
+
+def test_answer_question_plans_and_executes() -> None:
+    metadata = DatasetMetadata(
+        id="DEMO_PJAN",
+        agency="ESTAT",
+        version="1.0",
+        data_updated_at="2026-08-14T23:00:00+0200",
+    )
+
+    observation = Observation(
+        dataset_code="DEMO_PJAN",
+        dimensions={"unit": "NR"},
+        time_period="2024",
+        value=123.0,
+    )
+
+    class FakePlanner:
+        def plan(self, question: str) -> StructuredQuestion:
+            assert question == "What was the population in 2024?"
+            return StructuredQuestion(
+                dataset_code="DEMO_PJAN",
+                filters={"TIME_PERIOD": "2024"},
+                operation="none",
+            )
+
+    class FakeClient:
+        def get_structure(self, dataset_code: str) -> DataStructure:
+            raise AssertionError("TIME_PERIOD should not require structure lookup")
+
+        def get_codelist(self, ref: CodelistRef) -> Codelist:
+            raise AssertionError("TIME_PERIOD should not require codelist lookup")
+
+        def get_dataset_metadata(self, dataset_code: str) -> DatasetMetadata:
+            assert dataset_code == "DEMO_PJAN"
+            return metadata
+
+        def fetch_series(
+            self,
+            dataset_code: str,
+            filters: dict[str, str],
+        ) -> tuple[Observation, ...]:
+            assert dataset_code == "DEMO_PJAN"
+            assert filters == {"TIME_PERIOD": "2024"}
+            return (observation,)
+
+    retrieved_at = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
+
+    answer = answer_question(
+        FakePlanner(),
+        FakeClient(),
+        "What was the population in 2024?",
+        retrieved_at=retrieved_at,
+    )
+
+    assert answer.value == 123.0
+    assert answer.unit == "NR"
+    assert answer.computation.operation == "none"
+    assert answer.provenance.dataset_code == "DEMO_PJAN"

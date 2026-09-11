@@ -27,6 +27,17 @@ class StructuredQuestion:
     operation: str
 
 
+class Planner(Protocol):
+    def plan(self, question: str) -> StructuredQuestion: ...
+
+
+def plan_question(
+    planner: Planner,
+    question: str,
+) -> StructuredQuestion:
+    return planner.plan(question)
+
+
 def resolve_question_filters(
     client: MetadataClient,
     question: StructuredQuestion,
@@ -83,4 +94,23 @@ def execute_question(
     return build_computed_answer(
         retrieval,
         operation=question.operation,
+    )
+
+
+def answer_question(
+    planner: Planner,
+    client: ControllerClient,
+    question: str,
+    *,
+    retrieved_at: datetime,
+) -> DeterministicAnswer:
+    structured_question = plan_question(
+        planner,
+        question,
+    )
+
+    return execute_question(
+        client,
+        structured_question,
+        retrieved_at=retrieved_at,
     )
