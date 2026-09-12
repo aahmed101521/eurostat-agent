@@ -1048,3 +1048,284 @@ def test_answer_planned_question_uses_verified_dataset_path() -> None:
     assert answer.unit == "NR"
     assert answer.computation.operation == "none"
     assert answer.provenance.dataset_code == "DEMO_PJAN"
+
+
+def test_answer_planned_question_resolves_human_filters() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    index = DatasetIndex(records=(population,))
+
+    class FakePlanner:
+        def plan(self, question: str) -> QuestionPlan:
+            assert question == (
+                "What was the population of 20-year-old women in Belgium in 2024?"
+            )
+            return QuestionPlan(
+                dataset_query="Population on 1 January by age and sex",
+                filters={
+                    "freq": "annual",
+                    "unit": "number",
+                    "age": "20",
+                    "sex": "female",
+                    "geo": "Belgium",
+                    "TIME_PERIOD": "2024",
+                },
+                operation="none",
+            )
+
+    class FakeSelector:
+        def select_dataset(
+            self,
+            question: str,
+            candidates: tuple[DatasetRecord, ...],
+        ) -> str:
+            assert candidates == (population,)
+            return "DEMO_PJAN"
+
+    refs = {
+        "freq": CodelistRef("ESTAT", "FREQ", "1.0"),
+        "unit": CodelistRef("ESTAT", "UNIT", "28.0"),
+        "age": CodelistRef("ESTAT", "AGE", "2.0"),
+        "sex": CodelistRef("ESTAT", "SEX", "2.0"),
+        "geo": CodelistRef("ESTAT", "GEO", "28.0"),
+    }
+
+    structure = DataStructure(
+        id="DEMO_PJAN",
+        agency="ESTAT",
+        version="72.0",
+        dimensions=(
+            Dimension("freq", 1, refs["freq"]),
+            Dimension("unit", 2, refs["unit"]),
+            Dimension("age", 3, refs["age"]),
+            Dimension("sex", 4, refs["sex"]),
+            Dimension("geo", 5, refs["geo"]),
+            Dimension("TIME_PERIOD", 6, None),
+        ),
+        measure_id="OBS_VALUE",
+    )
+
+    codelists = {
+        "FREQ": Codelist(
+            id="FREQ",
+            agency="ESTAT",
+            version="1.0",
+            codes=(Code("A", "Annual"),),
+        ),
+        "UNIT": Codelist(
+            id="UNIT",
+            agency="ESTAT",
+            version="28.0",
+            codes=(Code("NR", "Number"),),
+        ),
+        "AGE": Codelist(
+            id="AGE",
+            agency="ESTAT",
+            version="2.0",
+            codes=(Code("Y20", "20 years"),),
+        ),
+        "SEX": Codelist(
+            id="SEX",
+            agency="ESTAT",
+            version="2.0",
+            codes=(Code("F", "Females"),),
+        ),
+        "GEO": Codelist(
+            id="GEO",
+            agency="ESTAT",
+            version="28.0",
+            codes=(Code("BE", "Belgium"),),
+        ),
+    }
+
+    metadata = DatasetMetadata(
+        id="DEMO_PJAN",
+        agency="ESTAT",
+        version="1.0",
+        data_updated_at="2026-08-14T23:00:00+0200",
+    )
+
+    observation = Observation(
+        dataset_code="DEMO_PJAN",
+        dimensions={
+            "freq": "A",
+            "unit": "NR",
+            "age": "Y20",
+            "sex": "F",
+            "geo": "BE",
+        },
+        time_period="2024",
+        value=123.0,
+    )
+
+    class FakeClient:
+        def get_structure(self, dataset_code: str) -> DataStructure:
+            assert dataset_code == "DEMO_PJAN"
+            return structure
+
+        def get_codelist(self, ref: CodelistRef) -> Codelist:
+            return codelists[ref.id]
+
+        def get_dataset_metadata(
+            self,
+            dataset_code: str,
+        ) -> DatasetMetadata:
+            assert dataset_code == "DEMO_PJAN"
+            return metadata
+
+        def fetch_series(
+            self,
+            dataset_code: str,
+            filters: dict[str, str],
+        ) -> tuple[Observation, ...]:
+            assert dataset_code == "DEMO_PJAN"
+            assert filters == {
+                "freq": "A",
+                "unit": "NR",
+                "age": "Y20",
+                "sex": "F",
+                "geo": "BE",
+                "TIME_PERIOD": "2024",
+            }
+            return (observation,)
+
+    answer = answer_planned_question(
+        FakePlanner(),
+        FakeSelector(),
+        FakeClient(),
+        ("What was the population of 20-year-old women in Belgium in 2024?"),
+        index=index,
+        retrieved_at=datetime(
+            2026,
+            9,
+            11,
+            12,
+            0,
+            tzinfo=UTC,
+        ),
+    )
+
+    assert answer.value == 123.0
+    assert answer.unit == "NR"
+    assert answer.provenance.dataset_code == "DEMO_PJAN"
+    assert answer.provenance.filters == (
+        ("TIME_PERIOD", "2024"),
+        ("age", "Y20"),
+        ("freq", "A"),
+        ("geo", "BE"),
+        ("sex", "F"),
+        ("unit", "NR"),
+    )
+
+
+def test_answer_planned_question_dispatches_computation() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    index = DatasetIndex(records=(population,))
+
+    class FakePlanner:
+        def plan(self, question: str) -> QuestionPlan:
+            assert question == "What was the total population across 2023 and 2024?"
+            return QuestionPlan(
+                dataset_query="Population on 1 January by age and sex",
+                filters={},
+                operation="sum",
+            )
+
+    class FakeSelector:
+        def select_dataset(
+            self,
+            question: str,
+            candidates: tuple[DatasetRecord, ...],
+        ) -> str:
+            assert candidates == (population,)
+            return "DEMO_PJAN"
+
+    metadata = DatasetMetadata(
+        id="DEMO_PJAN",
+        agency="ESTAT",
+        version="1.0",
+        data_updated_at="2026-08-14T23:00:00+0200",
+    )
+
+    observations = (
+        Observation(
+            dataset_code="DEMO_PJAN",
+            dimensions={"unit": "NR"},
+            time_period="2023",
+            value=100.0,
+        ),
+        Observation(
+            dataset_code="DEMO_PJAN",
+            dimensions={"unit": "NR"},
+            time_period="2024",
+            value=150.0,
+        ),
+    )
+
+    class FakeClient:
+        def get_structure(self, dataset_code: str) -> DataStructure:
+            raise AssertionError("No coded filters should be resolved")
+
+        def get_codelist(self, ref: CodelistRef) -> Codelist:
+            raise AssertionError("No coded filters should be resolved")
+
+        def get_dataset_metadata(
+            self,
+            dataset_code: str,
+        ) -> DatasetMetadata:
+            assert dataset_code == "DEMO_PJAN"
+            return metadata
+
+        def fetch_series(
+            self,
+            dataset_code: str,
+            filters: dict[str, str],
+        ) -> tuple[Observation, ...]:
+            assert dataset_code == "DEMO_PJAN"
+            assert filters == {}
+            return observations
+
+    answer = answer_planned_question(
+        FakePlanner(),
+        FakeSelector(),
+        FakeClient(),
+        "What was the total population across 2023 and 2024?",
+        index=index,
+        retrieved_at=datetime(
+            2026,
+            9,
+            11,
+            12,
+            0,
+            tzinfo=UTC,
+        ),
+    )
+
+    assert answer.value == 250.0
+    assert answer.unit == "NR"
+    assert answer.computation.operation == "sum"
+    assert answer.computation.input_values == (100.0, 150.0)
+    assert answer.provenance.dataset_code == "DEMO_PJAN"
