@@ -1,4 +1,4 @@
-from typing import cast
+import json
 
 import httpx
 
@@ -43,6 +43,17 @@ class OpenAICompatibleModel:
         except httpx.HTTPError as exc:
             raise ModelClientError("Model request failed.") from exc
 
-        payload = response.json()
+        try:
+            payload = response.json()
+        except json.JSONDecodeError as exc:
+            raise ModelClientError("Model response has invalid structure.") from exc
 
-        return cast(str, payload["choices"][0]["message"]["content"])
+        try:
+            content = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise ModelClientError("Model response has invalid structure.") from exc
+
+        if not isinstance(content, str):
+            raise ModelClientError("Model response has invalid structure.")
+
+        return content

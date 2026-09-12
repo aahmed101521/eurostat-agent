@@ -58,3 +58,29 @@ def test_openai_compatible_model_wraps_http_errors() -> None:
             match="Model request failed",
         ):
             model.complete("Plan this Eurostat question.")
+
+
+def test_openai_compatible_model_rejects_malformed_success_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [],
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    with httpx.Client(transport=transport) as http_client:
+        model = OpenAICompatibleModel(
+            base_url="https://example.test/v1",
+            api_key="test-key",
+            model="test-model",
+            http_client=http_client,
+        )
+
+        with pytest.raises(
+            ModelClientError,
+            match="Model response has invalid structure.",
+        ):
+            model.complete("Hello")

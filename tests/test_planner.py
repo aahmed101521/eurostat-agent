@@ -5,6 +5,7 @@ import pytest
 from eurostat_agent.catalogue import DatasetIndex, DatasetRecord
 from eurostat_agent.controller import (
     QuestionPlan,
+    answer_planned_question,
     create_question_plan,
     execute_question,
     materialize_question_plan,
@@ -480,3 +481,106 @@ def test_json_dataset_selector_rejects_non_object_response() -> None:
             "What was the population in Belgium in 2024?",
             (),
         )
+
+
+def test_json_planner_and_selector_drive_safe_controller_path() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    index = DatasetIndex(records=(population,))
+
+    class FakeModel:
+        def complete(self, prompt: str) -> str:
+            if "Convert the following Eurostat question" in prompt:
+                return """
+                {
+                    "dataset_query": "Population on 1 January by age and sex",
+                    "filters": {
+                        "TIME_PERIOD": "2024"
+                    },
+                    "operation": "none"
+                }
+                """
+
+            if "Choose the best Eurostat dataset" in prompt:
+                assert "DEMO_PJAN" in prompt
+                return """
+                {
+                    "dataset_code": "DEMO_PJAN"
+                }
+                """
+
+            raise AssertionError(f"Unexpected prompt: {prompt}")
+
+    metadata = DatasetMetadata(
+        id="DEMO_PJAN",
+        agency="ESTAT",
+        version="1.0",
+        data_updated_at="2026-08-14T23:00:00+0200",
+    )
+
+    observation = Observation(
+        dataset_code="DEMO_PJAN",
+        dimensions={"unit": "NR"},
+        time_period="2024",
+        value=123.0,
+    )
+
+    class FakeClient:
+        def get_structure(self, dataset_code: str) -> DataStructure:
+            raise AssertionError("TIME_PERIOD should not require structure lookup")
+
+        def get_codelist(self, ref: CodelistRef) -> Codelist:
+            raise AssertionError("TIME_PERIOD should not require codelist lookup")
+
+        def get_dataset_metadata(
+            self,
+            dataset_code: str,
+        ) -> DatasetMetadata:
+            assert dataset_code == "DEMO_PJAN"
+            return metadata
+
+        def fetch_series(
+            self,
+            dataset_code: str,
+            filters: dict[str, str],
+        ) -> tuple[Observation, ...]:
+            assert dataset_code == "DEMO_PJAN"
+            assert filters == {"TIME_PERIOD": "2024"}
+            return (observation,)
+
+    model = FakeModel()
+
+    planner = JsonPlanner(model)
+    selector = JsonDatasetSelector(model)
+
+    answer = answer_planned_question(
+        planner,
+        selector,
+        FakeClient(),
+        "What was the population in 2024?",
+        index=index,
+        retrieved_at=datetime(
+            2026,
+            9,
+            11,
+            12,
+            0,
+            tzinfo=UTC,
+        ),
+    )
+
+    assert answer.value == 123.0
+    assert answer.unit == "NR"
+    assert answer.computation.operation == "none"
+    assert answer.provenance.dataset_code == "DEMO_PJAN"
