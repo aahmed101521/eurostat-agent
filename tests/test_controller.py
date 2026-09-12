@@ -2,13 +2,19 @@ from datetime import UTC, datetime
 
 import pytest
 
+from eurostat_agent.catalogue import DatasetIndex, DatasetRecord
 from eurostat_agent.controller import (
+    QuestionPlan,
     StructuredQuestion,
-    answer_question,
+    answer_planned_question,
+    build_structured_question,
+    discover_and_select_dataset,
+    discover_dataset_candidates,
     execute_question,
-    plan_question,
+    materialize_question_plan,
     resolve_question_filters,
     retrieve_question,
+    select_dataset_candidate,
 )
 from eurostat_agent.data import Observation
 from eurostat_agent.metadata import (
@@ -621,8 +627,324 @@ def test_execute_question_resolves_complete_structured_request() -> None:
     )
 
 
-def test_plan_question_uses_planner_to_create_structured_question() -> None:
-    expected = StructuredQuestion(
+def test_discover_dataset_candidates_uses_deterministic_search() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    migration = DatasetRecord(
+        code="MIGR_IMM1CTZ",
+        title="Immigration by age and citizenship",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    index = DatasetIndex(
+        records=(
+            population,
+            migration,
+        )
+    )
+
+    results = discover_dataset_candidates(
+        "Population on 1 January by age and sex",
+        index=index,
+        limit=5,
+    )
+
+    assert len(results) == 1
+    assert results[0].record.code == "DEMO_PJAN"
+    assert results[0].record.title == "Population on 1 January by age and sex"
+
+
+def test_select_dataset_candidate_returns_discovered_dataset() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    migration = DatasetRecord(
+        code="MIGR_IMM1CTZ",
+        title="Immigration by age and citizenship",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    candidates = (
+        population,
+        migration,
+    )
+
+    class FakeSelector:
+        def select_dataset(
+            self,
+            question: str,
+            candidates: tuple[DatasetRecord, ...],
+        ) -> str:
+            assert question == "What was the population in Belgium in 2024?"
+            assert candidates == (
+                population,
+                migration,
+            )
+            return "DEMO_PJAN"
+
+    result = select_dataset_candidate(
+        FakeSelector(),
+        "What was the population in Belgium in 2024?",
+        candidates,
+    )
+
+    assert result == population
+
+
+def test_select_dataset_candidate_rejects_undiscovered_dataset() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    candidates = (population,)
+
+    class FakeSelector:
+        def select_dataset(
+            self,
+            question: str,
+            candidates: tuple[DatasetRecord, ...],
+        ) -> str:
+            return "MADE_UP_DATASET"
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Selected dataset 'MADE_UP_DATASET' is not among the discovered candidates."
+        ),
+    ):
+        select_dataset_candidate(
+            FakeSelector(),
+            "What was the population in Belgium in 2024?",
+            candidates,
+        )
+
+
+def test_discover_and_select_dataset_searches_before_selection() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    migration = DatasetRecord(
+        code="MIGR_IMM1CTZ",
+        title="Immigration by age and citizenship",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    index = DatasetIndex(
+        records=(
+            population,
+            migration,
+        )
+    )
+
+    class FakeSelector:
+        def select_dataset(
+            self,
+            question: str,
+            candidates: tuple[DatasetRecord, ...],
+        ) -> str:
+            assert question == "What was the population in Belgium in 2024?"
+            assert candidates == (population,)
+            return "DEMO_PJAN"
+
+    result = discover_and_select_dataset(
+        FakeSelector(),
+        question="What was the population in Belgium in 2024?",
+        search_query="Population on 1 January by age and sex",
+        index=index,
+        limit=5,
+    )
+
+    assert result == population
+
+
+def test_discover_and_select_dataset_rejects_empty_search_results() -> None:
+    index = DatasetIndex(records=())
+
+    class FakeSelector:
+        def select_dataset(
+            self,
+            question: str,
+            candidates: tuple[DatasetRecord, ...],
+        ) -> str:
+            raise AssertionError("Selector should not be called without candidates")
+
+    with pytest.raises(
+        ValueError,
+        match="No dataset candidates were found.",
+    ):
+        discover_and_select_dataset(
+            FakeSelector(),
+            question="What was the population in Belgium in 2024?",
+            search_query="Population on 1 January by age and sex",
+            index=index,
+            limit=5,
+        )
+
+
+def test_question_plan_preserves_dataset_search_intent() -> None:
+    plan = QuestionPlan(
+        dataset_query="Population on 1 January by age and sex",
+        filters={
+            "geo": "Belgium",
+            "sex": "female",
+            "age": "20",
+            "TIME_PERIOD": "2024",
+        },
+        operation="none",
+    )
+
+    assert plan.dataset_query == "Population on 1 January by age and sex"
+    assert plan.filters["geo"] == "Belgium"
+    assert plan.filters["TIME_PERIOD"] == "2024"
+    assert plan.operation == "none"
+
+
+def test_build_structured_question_uses_verified_dataset() -> None:
+    plan = QuestionPlan(
+        dataset_query="Population on 1 January by age and sex",
+        filters={
+            "geo": "Belgium",
+            "sex": "female",
+            "age": "20",
+            "TIME_PERIOD": "2024",
+        },
+        operation="none",
+    )
+
+    dataset = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    result = build_structured_question(
+        plan,
+        dataset,
+    )
+
+    assert result == StructuredQuestion(
+        dataset_code="DEMO_PJAN",
+        filters={
+            "geo": "Belgium",
+            "sex": "female",
+            "age": "20",
+            "TIME_PERIOD": "2024",
+        },
+        operation="none",
+    )
+
+
+def test_materialize_question_plan_discovers_verified_dataset() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    index = DatasetIndex(records=(population,))
+
+    plan = QuestionPlan(
+        dataset_query="Population on 1 January by age and sex",
+        filters={
+            "geo": "Belgium",
+            "TIME_PERIOD": "2024",
+        },
+        operation="none",
+    )
+
+    class FakeSelector:
+        def select_dataset(
+            self,
+            question: str,
+            candidates: tuple[DatasetRecord, ...],
+        ) -> str:
+            assert question == "What was the population in Belgium in 2024?"
+            assert candidates == (population,)
+            return "DEMO_PJAN"
+
+    result = materialize_question_plan(
+        FakeSelector(),
+        plan,
+        question="What was the population in Belgium in 2024?",
+        index=index,
+    )
+
+    assert result == StructuredQuestion(
         dataset_code="DEMO_PJAN",
         filters={
             "geo": "Belgium",
@@ -631,20 +953,42 @@ def test_plan_question_uses_planner_to_create_structured_question() -> None:
         operation="none",
     )
 
-    class FakePlanner:
-        def plan(self, question: str) -> StructuredQuestion:
-            assert question == "What was the population in Belgium in 2024?"
-            return expected
 
-    result = plan_question(
-        FakePlanner(),
-        "What was the population in Belgium in 2024?",
+def test_answer_planned_question_uses_verified_dataset_path() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
     )
 
-    assert result == expected
+    index = DatasetIndex(records=(population,))
 
+    class FakePlanner:
+        def plan(self, question: str) -> QuestionPlan:
+            assert question == "What was the population in 2024?"
+            return QuestionPlan(
+                dataset_query="Population on 1 January by age and sex",
+                filters={"TIME_PERIOD": "2024"},
+                operation="none",
+            )
 
-def test_answer_question_plans_and_executes() -> None:
+    class FakeSelector:
+        def select_dataset(
+            self,
+            question: str,
+            candidates: tuple[DatasetRecord, ...],
+        ) -> str:
+            assert question == "What was the population in 2024?"
+            assert candidates == (population,)
+            return "DEMO_PJAN"
+
     metadata = DatasetMetadata(
         id="DEMO_PJAN",
         agency="ESTAT",
@@ -659,15 +1003,6 @@ def test_answer_question_plans_and_executes() -> None:
         value=123.0,
     )
 
-    class FakePlanner:
-        def plan(self, question: str) -> StructuredQuestion:
-            assert question == "What was the population in 2024?"
-            return StructuredQuestion(
-                dataset_code="DEMO_PJAN",
-                filters={"TIME_PERIOD": "2024"},
-                operation="none",
-            )
-
     class FakeClient:
         def get_structure(self, dataset_code: str) -> DataStructure:
             raise AssertionError("TIME_PERIOD should not require structure lookup")
@@ -675,7 +1010,10 @@ def test_answer_question_plans_and_executes() -> None:
         def get_codelist(self, ref: CodelistRef) -> Codelist:
             raise AssertionError("TIME_PERIOD should not require codelist lookup")
 
-        def get_dataset_metadata(self, dataset_code: str) -> DatasetMetadata:
+        def get_dataset_metadata(
+            self,
+            dataset_code: str,
+        ) -> DatasetMetadata:
             assert dataset_code == "DEMO_PJAN"
             return metadata
 
@@ -688,12 +1026,21 @@ def test_answer_question_plans_and_executes() -> None:
             assert filters == {"TIME_PERIOD": "2024"}
             return (observation,)
 
-    retrieved_at = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
+    retrieved_at = datetime(
+        2026,
+        9,
+        11,
+        12,
+        0,
+        tzinfo=UTC,
+    )
 
-    answer = answer_question(
+    answer = answer_planned_question(
         FakePlanner(),
+        FakeSelector(),
         FakeClient(),
         "What was the population in 2024?",
+        index=index,
         retrieved_at=retrieved_at,
     )
 

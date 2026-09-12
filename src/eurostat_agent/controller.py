@@ -2,6 +2,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from eurostat_agent.catalogue import (
+    DatasetIndex,
+    DatasetRecord,
+    DatasetSearchResult,
+    search_datasets,
+)
 from eurostat_agent.provenance import (
     DeterministicAnswer,
     RetrievalClient,
@@ -27,15 +33,121 @@ class StructuredQuestion:
     operation: str
 
 
-class Planner(Protocol):
-    def plan(self, question: str) -> StructuredQuestion: ...
+@dataclass(frozen=True)
+class QuestionPlan:
+    dataset_query: str
+    filters: dict[str, str]
+    operation: str
 
 
-def plan_question(
-    planner: Planner,
+class QuestionPlanner(Protocol):
+    def plan(self, question: str) -> QuestionPlan: ...
+
+
+class DatasetSelector(Protocol):
+    def select_dataset(
+        self,
+        question: str,
+        candidates: tuple[DatasetRecord, ...],
+    ) -> str: ...
+
+
+def create_question_plan(
+    planner: QuestionPlanner,
     question: str,
-) -> StructuredQuestion:
+) -> QuestionPlan:
     return planner.plan(question)
+
+
+def discover_dataset_candidates(
+    query: str,
+    *,
+    index: DatasetIndex,
+    limit: int = 10,
+) -> tuple[DatasetSearchResult, ...]:
+    return search_datasets(
+        query,
+        index=index,
+        limit=limit,
+    )
+
+
+def select_dataset_candidate(
+    selector: DatasetSelector,
+    question: str,
+    candidates: tuple[DatasetRecord, ...],
+) -> DatasetRecord:
+    selected_code = selector.select_dataset(
+        question,
+        candidates,
+    )
+
+    for candidate in candidates:
+        if candidate.code == selected_code:
+            return candidate
+
+    raise ValueError(
+        f"Selected dataset {selected_code!r} is not among the discovered candidates."
+    )
+
+
+def discover_and_select_dataset(
+    selector: DatasetSelector,
+    *,
+    question: str,
+    search_query: str,
+    index: DatasetIndex,
+    limit: int = 10,
+) -> DatasetRecord:
+    search_results = discover_dataset_candidates(
+        search_query,
+        index=index,
+        limit=limit,
+    )
+
+    candidates = tuple(result.record for result in search_results)
+
+    if not candidates:
+        raise ValueError("No dataset candidates were found.")
+
+    return select_dataset_candidate(
+        selector,
+        question,
+        candidates,
+    )
+
+
+def build_structured_question(
+    plan: QuestionPlan,
+    dataset: DatasetRecord,
+) -> StructuredQuestion:
+    return StructuredQuestion(
+        dataset_code=dataset.code,
+        filters=plan.filters,
+        operation=plan.operation,
+    )
+
+
+def materialize_question_plan(
+    selector: DatasetSelector,
+    plan: QuestionPlan,
+    *,
+    question: str,
+    index: DatasetIndex,
+    limit: int = 10,
+) -> StructuredQuestion:
+    dataset = discover_and_select_dataset(
+        selector,
+        question=question,
+        search_query=plan.dataset_query,
+        index=index,
+        limit=limit,
+    )
+
+    return build_structured_question(
+        plan,
+        dataset,
+    )
 
 
 def resolve_question_filters(
@@ -55,6 +167,7 @@ def resolve_question_filters(
             dimension_id,
             text,
         )
+
         resolved_filters[dimension_id] = resolution.code.id
 
     return resolved_filters
@@ -66,7 +179,10 @@ def retrieve_question(
     *,
     retrieved_at: datetime,
 ) -> RetrievalResult:
-    resolved_filters = resolve_question_filters(client, question)
+    resolved_filters = resolve_question_filters(
+        client,
+        question,
+    )
 
     return retrieve_with_provenance(
         client,
@@ -97,16 +213,27 @@ def execute_question(
     )
 
 
-def answer_question(
-    planner: Planner,
+def answer_planned_question(
+    planner: QuestionPlanner,
+    selector: DatasetSelector,
     client: ControllerClient,
     question: str,
     *,
+    index: DatasetIndex,
     retrieved_at: datetime,
+    limit: int = 10,
 ) -> DeterministicAnswer:
-    structured_question = plan_question(
+    plan = create_question_plan(
         planner,
         question,
+    )
+
+    structured_question = materialize_question_plan(
+        selector,
+        plan,
+        question=question,
+        index=index,
+        limit=limit,
     )
 
     return execute_question(
