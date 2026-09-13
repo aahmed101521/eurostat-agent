@@ -37,11 +37,46 @@ class BenchmarkResult:
     score: BenchmarkScore
 
 
+def benchmark_result_to_dict(
+    result: BenchmarkResult,
+) -> dict[str, object]:
+    return {
+        "case": benchmark_case_to_dict(result.case),
+        "score": {
+            "dataset_match": result.score.dataset_match,
+            "filters_match": result.score.filters_match,
+            "operation_match": result.score.operation_match,
+            "exact_match": result.score.exact_match,
+            "filters_scored": result.score.filters_scored,
+        },
+        "answer": {
+            "value": result.answer.value,
+            "unit": result.answer.unit,
+            "dataset_code": result.answer.provenance.dataset_code,
+            "filters": [
+                [dimension, code]
+                for dimension, code in result.answer.provenance.filters
+            ],
+            "operation": result.answer.computation.operation,
+        },
+    }
+
+
 @dataclass(frozen=True)
 class BenchmarkFailure:
     case: BenchmarkCase
     error_type: str
     error_message: str
+
+
+def benchmark_failure_to_dict(
+    failure: BenchmarkFailure,
+) -> dict[str, object]:
+    return {
+        "case": benchmark_case_to_dict(failure.case),
+        "error_type": failure.error_type,
+        "error_message": failure.error_message,
+    }
 
 
 @dataclass(frozen=True)
@@ -56,11 +91,36 @@ class BenchmarkSummary:
     exact_match_accuracy: float
 
 
+def benchmark_summary_to_dict(
+    summary: BenchmarkSummary,
+) -> dict[str, int | float]:
+    return {
+        "total_cases": summary.total_cases,
+        "completed_cases": summary.completed_cases,
+        "failed_cases": summary.failed_cases,
+        "completion_rate": summary.completion_rate,
+        "dataset_accuracy": summary.dataset_accuracy,
+        "filters_accuracy": summary.filters_accuracy,
+        "operation_accuracy": summary.operation_accuracy,
+        "exact_match_accuracy": summary.exact_match_accuracy,
+    }
+
+
 @dataclass(frozen=True)
 class BenchmarkRun:
     results: tuple[BenchmarkResult, ...]
     failures: tuple[BenchmarkFailure, ...]
     summary: BenchmarkSummary
+
+
+def benchmark_run_to_dict(
+    run: BenchmarkRun,
+) -> dict[str, object]:
+    return {
+        "summary": benchmark_summary_to_dict(run.summary),
+        "results": [benchmark_result_to_dict(result) for result in run.results],
+        "failures": [benchmark_failure_to_dict(failure) for failure in run.failures],
+    }
 
 
 def score_benchmark_case(
@@ -111,6 +171,20 @@ def build_benchmark_result(
             answer,
         ),
     )
+
+
+def benchmark_case_to_dict(
+    case: BenchmarkCase,
+) -> dict[str, object]:
+    return {
+        "question": case.question,
+        "expected_dataset_code": case.expected_dataset_code,
+        "expected_filters": [
+            [dimension, code] for dimension, code in case.expected_filters
+        ],
+        "expected_operation": case.expected_operation,
+        "score_filters": case.score_filters,
+    }
 
 
 def summarize_benchmark_scores(

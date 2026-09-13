@@ -11,7 +11,14 @@ from eurostat_agent.evaluation import (
     BenchmarkCase,
     BenchmarkFailure,
     BenchmarkResult,
+    BenchmarkRun,
     BenchmarkScore,
+    BenchmarkSummary,
+    benchmark_case_to_dict,
+    benchmark_failure_to_dict,
+    benchmark_result_to_dict,
+    benchmark_run_to_dict,
+    benchmark_summary_to_dict,
     build_benchmark_result,
     run_benchmark,
     score_benchmark_case,
@@ -1603,3 +1610,297 @@ def test_core_benchmark_reports_unsupported_multi_period_case() -> None:
         run.failures[0].error_message
         == "Multi-period filters are not supported by the current question plan."
     )
+
+
+def test_benchmark_summary_to_dict_returns_stable_metrics() -> None:
+    summary = BenchmarkSummary(
+        total_cases=4,
+        completed_cases=3,
+        failed_cases=1,
+        completion_rate=0.75,
+        dataset_accuracy=1.0,
+        filters_accuracy=1.0,
+        operation_accuracy=1.0,
+        exact_match_accuracy=1.0,
+    )
+
+    assert benchmark_summary_to_dict(summary) == {
+        "total_cases": 4,
+        "completed_cases": 3,
+        "failed_cases": 1,
+        "completion_rate": 0.75,
+        "dataset_accuracy": 1.0,
+        "filters_accuracy": 1.0,
+        "operation_accuracy": 1.0,
+        "exact_match_accuracy": 1.0,
+    }
+
+
+def test_benchmark_run_to_dict_returns_stable_top_level_shape() -> None:
+    summary = BenchmarkSummary(
+        total_cases=0,
+        completed_cases=0,
+        failed_cases=0,
+        completion_rate=0.0,
+        dataset_accuracy=0.0,
+        filters_accuracy=0.0,
+        operation_accuracy=0.0,
+        exact_match_accuracy=0.0,
+    )
+
+    run = BenchmarkRun(
+        results=(),
+        failures=(),
+        summary=summary,
+    )
+
+    assert benchmark_run_to_dict(run) == {
+        "summary": {
+            "total_cases": 0,
+            "completed_cases": 0,
+            "failed_cases": 0,
+            "completion_rate": 0.0,
+            "dataset_accuracy": 0.0,
+            "filters_accuracy": 0.0,
+            "operation_accuracy": 0.0,
+            "exact_match_accuracy": 0.0,
+        },
+        "results": [],
+        "failures": [],
+    }
+
+
+def test_benchmark_case_to_dict_returns_stable_semantics() -> None:
+    case = BenchmarkCase(
+        question="What was the population in 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(
+            ("TIME_PERIOD", "2024"),
+            ("geo", "BE"),
+        ),
+        expected_operation="none",
+        score_filters=True,
+    )
+
+    assert benchmark_case_to_dict(case) == {
+        "question": "What was the population in 2024?",
+        "expected_dataset_code": "DEMO_PJAN",
+        "expected_filters": [
+            ["TIME_PERIOD", "2024"],
+            ["geo", "BE"],
+        ],
+        "expected_operation": "none",
+        "score_filters": True,
+    }
+
+
+def test_benchmark_failure_to_dict_returns_stable_error_details() -> None:
+    case = BenchmarkCase(
+        question="What is the total population across 2023 and 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(),
+        expected_operation="sum",
+        score_filters=False,
+    )
+
+    failure = BenchmarkFailure(
+        case=case,
+        error_type="ValueError",
+        error_message="Multi-period filters are not supported.",
+    )
+
+    assert benchmark_failure_to_dict(failure) == {
+        "case": {
+            "question": "What is the total population across 2023 and 2024?",
+            "expected_dataset_code": "DEMO_PJAN",
+            "expected_filters": [],
+            "expected_operation": "sum",
+            "score_filters": False,
+        },
+        "error_type": "ValueError",
+        "error_message": "Multi-period filters are not supported.",
+    }
+
+
+def test_benchmark_run_to_dict_includes_failures() -> None:
+    case = BenchmarkCase(
+        question="What is the total population across 2023 and 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(),
+        expected_operation="sum",
+        score_filters=False,
+    )
+
+    failure = BenchmarkFailure(
+        case=case,
+        error_type="ValueError",
+        error_message="Multi-period filters are not supported.",
+    )
+
+    summary = BenchmarkSummary(
+        total_cases=1,
+        completed_cases=0,
+        failed_cases=1,
+        completion_rate=0.0,
+        dataset_accuracy=0.0,
+        filters_accuracy=0.0,
+        operation_accuracy=0.0,
+        exact_match_accuracy=0.0,
+    )
+
+    run = BenchmarkRun(
+        results=(),
+        failures=(failure,),
+        summary=summary,
+    )
+
+    report = benchmark_run_to_dict(run)
+
+    assert report["failures"] == [
+        {
+            "case": {
+                "question": "What is the total population across 2023 and 2024?",
+                "expected_dataset_code": "DEMO_PJAN",
+                "expected_filters": [],
+                "expected_operation": "sum",
+                "score_filters": False,
+            },
+            "error_type": "ValueError",
+            "error_message": "Multi-period filters are not supported.",
+        }
+    ]
+
+
+def test_benchmark_result_to_dict_returns_stable_success_details() -> None:
+    case = BenchmarkCase(
+        question="What was the population in Belgium in 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(("TIME_PERIOD", "2024"),),
+        expected_operation="none",
+    )
+
+    answer = DeterministicAnswer(
+        value=123.0,
+        unit="NR",
+        computation=ComputationProvenance(
+            operation="none",
+            input_values=(123.0,),
+            input_time_periods=("2024",),
+            input_dimensions=(),
+            output_value=123.0,
+        ),
+        provenance=RetrievalProvenance(
+            dataset_code="DEMO_PJAN",
+            dataset_agency="ESTAT",
+            dataset_version="72.0",
+            filters=(("TIME_PERIOD", "2024"),),
+            retrieved_at=datetime(2026, 9, 11, 12, 0, tzinfo=UTC),
+            data_updated_at="2026-08-14T23:00:00+0200",
+            source="Eurostat",
+            source_url="https://example.test",
+        ),
+    )
+
+    result = build_benchmark_result(case, answer)
+
+    assert benchmark_result_to_dict(result) == {
+        "case": {
+            "question": "What was the population in Belgium in 2024?",
+            "expected_dataset_code": "DEMO_PJAN",
+            "expected_filters": [["TIME_PERIOD", "2024"]],
+            "expected_operation": "none",
+            "score_filters": True,
+        },
+        "score": {
+            "dataset_match": True,
+            "filters_match": True,
+            "operation_match": True,
+            "exact_match": True,
+            "filters_scored": True,
+        },
+        "answer": {
+            "value": 123.0,
+            "unit": "NR",
+            "dataset_code": "DEMO_PJAN",
+            "filters": [["TIME_PERIOD", "2024"]],
+            "operation": "none",
+        },
+    }
+
+
+def test_benchmark_run_to_dict_includes_results() -> None:
+    case = BenchmarkCase(
+        question="What was the population in Belgium in 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(("TIME_PERIOD", "2024"),),
+        expected_operation="none",
+    )
+
+    answer = DeterministicAnswer(
+        value=123.0,
+        unit="NR",
+        computation=ComputationProvenance(
+            operation="none",
+            input_values=(123.0,),
+            input_time_periods=("2024",),
+            input_dimensions=(),
+            output_value=123.0,
+        ),
+        provenance=RetrievalProvenance(
+            dataset_code="DEMO_PJAN",
+            dataset_agency="ESTAT",
+            dataset_version="72.0",
+            filters=(("TIME_PERIOD", "2024"),),
+            retrieved_at=datetime(2026, 9, 11, 12, 0, tzinfo=UTC),
+            data_updated_at="2026-08-14T23:00:00+0200",
+            source="Eurostat",
+            source_url="https://example.test",
+        ),
+    )
+
+    result = build_benchmark_result(case, answer)
+
+    summary = BenchmarkSummary(
+        total_cases=1,
+        completed_cases=1,
+        failed_cases=0,
+        completion_rate=1.0,
+        dataset_accuracy=1.0,
+        filters_accuracy=1.0,
+        operation_accuracy=1.0,
+        exact_match_accuracy=1.0,
+    )
+
+    run = BenchmarkRun(
+        results=(result,),
+        failures=(),
+        summary=summary,
+    )
+
+    report = benchmark_run_to_dict(run)
+
+    assert report["results"] == [
+        {
+            "case": {
+                "question": "What was the population in Belgium in 2024?",
+                "expected_dataset_code": "DEMO_PJAN",
+                "expected_filters": [["TIME_PERIOD", "2024"]],
+                "expected_operation": "none",
+                "score_filters": True,
+            },
+            "score": {
+                "dataset_match": True,
+                "filters_match": True,
+                "operation_match": True,
+                "exact_match": True,
+                "filters_scored": True,
+            },
+            "answer": {
+                "value": 123.0,
+                "unit": "NR",
+                "dataset_code": "DEMO_PJAN",
+                "filters": [["TIME_PERIOD", "2024"]],
+                "operation": "none",
+            },
+        }
+    ]
