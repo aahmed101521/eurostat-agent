@@ -19,6 +19,7 @@ class BenchmarkScore:
     filters_match: bool
     operation_match: bool
     exact_match: bool
+    filters_scored: bool = True
 
 
 @dataclass(frozen=True)
@@ -62,9 +63,11 @@ def score_benchmark_case(
     actual_operation: str,
 ) -> BenchmarkScore:
     dataset_match = actual_dataset_code == case.expected_dataset_code
+
     filters_match = (
         True if not case.score_filters else actual_filters == case.expected_filters
     )
+
     operation_match = actual_operation == case.expected_operation
 
     return BenchmarkScore(
@@ -72,6 +75,7 @@ def score_benchmark_case(
         filters_match=filters_match,
         operation_match=operation_match,
         exact_match=(dataset_match and filters_match and operation_match),
+        filters_scored=case.score_filters,
     )
 
 
@@ -109,13 +113,21 @@ def summarize_benchmark_scores(
     if total_cases == 0:
         raise ValueError("Cannot summarize an empty benchmark.")
 
+    scored_filters = tuple(score for score in scores if score.filters_scored)
+
+    filters_accuracy = (
+        sum(score.filters_match for score in scored_filters) / len(scored_filters)
+        if scored_filters
+        else 0.0
+    )
+
     return BenchmarkSummary(
         total_cases=total_cases,
         completed_cases=total_cases,
         failed_cases=0,
         completion_rate=1.0,
         dataset_accuracy=(sum(score.dataset_match for score in scores) / total_cases),
-        filters_accuracy=(sum(score.filters_match for score in scores) / total_cases),
+        filters_accuracy=filters_accuracy,
         operation_accuracy=(
             sum(score.operation_match for score in scores) / total_cases
         ),
@@ -165,6 +177,7 @@ def run_benchmark(
         score_summary = summarize_benchmark_scores(
             tuple(result.score for result in results)
         )
+
         dataset_accuracy = score_summary.dataset_accuracy
         filters_accuracy = score_summary.filters_accuracy
         operation_accuracy = score_summary.operation_accuracy

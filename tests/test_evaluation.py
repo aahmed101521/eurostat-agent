@@ -740,3 +740,45 @@ def test_score_benchmark_case_can_skip_filter_matching() -> None:
 
 def test_sum_benchmark_skips_filter_scoring() -> None:
     assert CORE_BENCHMARK_CASES[3].score_filters is False
+
+
+def test_score_reports_filters_as_not_scored() -> None:
+    case = BenchmarkCase(
+        question="What is the total population across 2023 and 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(),
+        expected_operation="sum",
+        score_filters=False,
+    )
+
+    score = score_benchmark_case(
+        case,
+        actual_dataset_code="DEMO_PJAN",
+        actual_filters=(("TIME_PERIOD", "2024"),),
+        actual_operation="sum",
+    )
+
+    assert score.filters_scored is False
+
+
+def test_summarize_benchmark_scores_excludes_unscored_filters() -> None:
+    scores = (
+        BenchmarkScore(
+            dataset_match=True,
+            filters_match=True,
+            operation_match=True,
+            exact_match=True,
+            filters_scored=False,
+        ),
+        BenchmarkScore(
+            dataset_match=True,
+            filters_match=False,
+            operation_match=True,
+            exact_match=False,
+            filters_scored=True,
+        ),
+    )
+
+    summary = summarize_benchmark_scores(scores)
+
+    assert summary.filters_accuracy == 0.0
