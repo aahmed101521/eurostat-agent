@@ -39,6 +39,7 @@ class BenchmarkSummary:
     total_cases: int
     completed_cases: int
     failed_cases: int
+    completion_rate: float
     dataset_accuracy: float
     filters_accuracy: float
     operation_accuracy: float
@@ -109,6 +110,7 @@ def summarize_benchmark_scores(
         total_cases=total_cases,
         completed_cases=total_cases,
         failed_cases=0,
+        completion_rate=1.0,
         dataset_accuracy=(sum(score.dataset_match for score in scores) / total_cases),
         filters_accuracy=(sum(score.filters_match for score in scores) / total_cases),
         operation_accuracy=(
@@ -149,6 +151,8 @@ def run_benchmark(
     failed_cases = len(failures)
     total_cases = len(cases)
 
+    completion_rate = completed_cases / total_cases if total_cases else 0.0
+
     if completed_cases == 0:
         dataset_accuracy = 0.0
         filters_accuracy = 0.0
@@ -167,6 +171,7 @@ def run_benchmark(
         total_cases=total_cases,
         completed_cases=completed_cases,
         failed_cases=failed_cases,
+        completion_rate=completion_rate,
         dataset_accuracy=dataset_accuracy,
         filters_accuracy=filters_accuracy,
         operation_accuracy=operation_accuracy,

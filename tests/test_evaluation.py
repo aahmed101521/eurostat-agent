@@ -653,3 +653,53 @@ def test_core_benchmark_contains_sum_operation() -> None:
         expected_filters=(),
         expected_operation="sum",
     )
+
+
+def test_run_benchmark_reports_completion_rate() -> None:
+    case_one = BenchmarkCase(
+        question="Question one",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(),
+        expected_operation="none",
+    )
+    case_two = BenchmarkCase(
+        question="Question two",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(),
+        expected_operation="none",
+    )
+
+    answer = DeterministicAnswer(
+        value=1.0,
+        unit="NR",
+        computation=ComputationProvenance(
+            operation="none",
+            input_values=(1.0,),
+            input_time_periods=("2024",),
+            input_dimensions=(),
+            output_value=1.0,
+        ),
+        provenance=RetrievalProvenance(
+            dataset_code="DEMO_PJAN",
+            dataset_agency="ESTAT",
+            dataset_version="72.0",
+            filters=(),
+            retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+            data_updated_at="2025-12-31",
+            source="Eurostat",
+            source_url="https://example.test",
+        ),
+    )
+
+    def answer_question(question: str) -> DeterministicAnswer:
+        if question == "Question two":
+            raise RuntimeError("failed")
+
+        return answer
+
+    run = run_benchmark(
+        (case_one, case_two),
+        answer_question,
+    )
+
+    assert run.summary.completion_rate == 0.5
