@@ -1547,3 +1547,59 @@ def test_core_benchmark_executes_different_population_codes() -> None:
         ("sex", "M"),
         ("unit", "NR"),
     )
+
+
+def test_core_benchmark_reports_unsupported_multi_period_case() -> None:
+    supported_questions = {
+        CORE_BENCHMARK_CASES[0].question,
+        CORE_BENCHMARK_CASES[1].question,
+        CORE_BENCHMARK_CASES[2].question,
+    }
+
+    def answer_question(question: str) -> DeterministicAnswer:
+        if question == CORE_BENCHMARK_CASES[3].question:
+            raise ValueError(
+                "Multi-period filters are not supported by the current question plan."
+            )
+
+        assert question in supported_questions
+
+        return DeterministicAnswer(
+            value=123.0,
+            unit="NR",
+            computation=ComputationProvenance(
+                operation="none",
+                input_values=(123.0,),
+                input_time_periods=("2024",),
+                input_dimensions=(),
+                output_value=123.0,
+            ),
+            provenance=RetrievalProvenance(
+                dataset_code="DEMO_PJAN",
+                dataset_agency="ESTAT",
+                dataset_version="72.0",
+                filters=CORE_BENCHMARK_CASES[0].expected_filters,
+                retrieved_at=datetime(2026, 9, 11, 12, 0, tzinfo=UTC),
+                data_updated_at="2026-08-14T23:00:00+0200",
+                source="Eurostat",
+                source_url="https://example.test",
+            ),
+        )
+
+    run = run_benchmark(
+        CORE_BENCHMARK_CASES,
+        answer_question,
+    )
+
+    assert run.summary.total_cases == 4
+    assert run.summary.completed_cases == 3
+    assert run.summary.failed_cases == 1
+    assert run.summary.completion_rate == 0.75
+
+    assert len(run.failures) == 1
+    assert run.failures[0].case == CORE_BENCHMARK_CASES[3]
+    assert run.failures[0].error_type == "ValueError"
+    assert (
+        run.failures[0].error_message
+        == "Multi-period filters are not supported by the current question plan."
+    )
