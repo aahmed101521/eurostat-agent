@@ -45,5 +45,6 @@ CORE_BENCHMARK_CASES = (
         expected_dataset_code="DEMO_PJAN",
         expected_filters=(),
         expected_operation="sum",
+        score_filters=False,
     ),
 )

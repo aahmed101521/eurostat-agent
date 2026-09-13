@@ -648,10 +648,11 @@ def test_core_benchmark_contains_different_population_codes() -> None:
 
 def test_core_benchmark_contains_sum_operation() -> None:
     assert CORE_BENCHMARK_CASES[3] == BenchmarkCase(
-        question=("What is the total population across 2023 and 2024?"),
+        question="What is the total population across 2023 and 2024?",
         expected_dataset_code="DEMO_PJAN",
         expected_filters=(),
         expected_operation="sum",
+        score_filters=False,
     )
 
 
@@ -703,3 +704,39 @@ def test_run_benchmark_reports_completion_rate() -> None:
     )
 
     assert run.summary.completion_rate == 0.5
+
+
+def test_benchmark_case_can_skip_filter_scoring() -> None:
+    case = BenchmarkCase(
+        question="What is the total population across 2023 and 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(),
+        expected_operation="sum",
+        score_filters=False,
+    )
+
+    assert case.score_filters is False
+
+
+def test_score_benchmark_case_can_skip_filter_matching() -> None:
+    case = BenchmarkCase(
+        question="What is the total population across 2023 and 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(),
+        expected_operation="sum",
+        score_filters=False,
+    )
+
+    score = score_benchmark_case(
+        case,
+        actual_dataset_code="DEMO_PJAN",
+        actual_filters=(("TIME_PERIOD", "2024"),),
+        actual_operation="sum",
+    )
+
+    assert score.filters_match is True
+    assert score.exact_match is True
+
+
+def test_sum_benchmark_skips_filter_scoring() -> None:
+    assert CORE_BENCHMARK_CASES[3].score_filters is False

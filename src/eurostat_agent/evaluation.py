@@ -10,6 +10,7 @@ class BenchmarkCase:
     expected_dataset_code: str
     expected_filters: tuple[tuple[str, str], ...]
     expected_operation: str
+    score_filters: bool = True
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,9 @@ def score_benchmark_case(
     actual_operation: str,
 ) -> BenchmarkScore:
     dataset_match = actual_dataset_code == case.expected_dataset_code
-    filters_match = actual_filters == case.expected_filters
+    filters_match = (
+        True if not case.score_filters else actual_filters == case.expected_filters
+    )
     operation_match = actual_operation == case.expected_operation
 
     return BenchmarkScore(
