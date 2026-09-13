@@ -4,6 +4,9 @@ import pytest
 
 import eurostat_agent.evaluation as evaluation
 from eurostat_agent.benchmark import CORE_BENCHMARK_CASES
+from eurostat_agent.catalogue import DatasetIndex, DatasetRecord
+from eurostat_agent.controller import QuestionPlan
+from eurostat_agent.data import Observation
 from eurostat_agent.evaluation import (
     BenchmarkCase,
     BenchmarkFailure,
@@ -14,6 +17,12 @@ from eurostat_agent.evaluation import (
     score_benchmark_case,
     score_deterministic_answer,
     summarize_benchmark_scores,
+)
+from eurostat_agent.metadata import (
+    Codelist,
+    CodelistRef,
+    DatasetMetadata,
+    DataStructure,
 )
 from eurostat_agent.provenance import (
     ComputationProvenance,
@@ -864,3 +873,114 @@ def test_run_controller_benchmark_routes_question_through_controller(
     assert calls == ["What was the population of women in Belgium in 2024?"]
     assert run.results[0].answer == answer
     assert run.summary.completed_cases == 1
+
+
+def test_run_controller_benchmark_executes_real_controller_path() -> None:
+    population = DatasetRecord(
+        code="DEMO_PJAN",
+        title="Population on 1 January by age and sex",
+        product_type="dataset",
+        description=None,
+        last_update=None,
+        last_modified=None,
+        data_start=None,
+        data_end=None,
+        value_count=None,
+        paths=(),
+    )
+
+    index = DatasetIndex(records=(population,))
+
+    case = BenchmarkCase(
+        question="What was the population in 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(("TIME_PERIOD", "2024"),),
+        expected_operation="none",
+    )
+
+    class FakePlanner:
+        def plan(self, question: str) -> QuestionPlan:
+            assert question == "What was the population in 2024?"
+
+            return QuestionPlan(
+                dataset_query="Population on 1 January by age and sex",
+                filters={"TIME_PERIOD": "2024"},
+                operation="none",
+            )
+
+    class FakeSelector:
+        def select_dataset(
+            self,
+            question: str,
+            candidates: tuple[DatasetRecord, ...],
+        ) -> str:
+            assert question == "What was the population in 2024?"
+            assert candidates == (population,)
+
+            return "DEMO_PJAN"
+
+    metadata = DatasetMetadata(
+        id="DEMO_PJAN",
+        agency="ESTAT",
+        version="1.0",
+        data_updated_at="2026-08-14T23:00:00+0200",
+    )
+
+    observation = Observation(
+        dataset_code="DEMO_PJAN",
+        dimensions={"unit": "NR"},
+        time_period="2024",
+        value=123.0,
+    )
+
+    class FakeClient:
+        def get_structure(self, dataset_code: str) -> DataStructure:
+            raise AssertionError("TIME_PERIOD should not require structure lookup")
+
+        def get_codelist(self, ref: CodelistRef) -> Codelist:
+            raise AssertionError("TIME_PERIOD should not require codelist lookup")
+
+        def get_dataset_metadata(
+            self,
+            dataset_code: str,
+        ) -> DatasetMetadata:
+            assert dataset_code == "DEMO_PJAN"
+
+            return metadata
+
+        def fetch_series(
+            self,
+            dataset_code: str,
+            filters: dict[str, str],
+        ) -> tuple[Observation, ...]:
+            assert dataset_code == "DEMO_PJAN"
+            assert filters == {"TIME_PERIOD": "2024"}
+
+            return (observation,)
+
+    run = evaluation.run_controller_benchmark(
+        (case,),
+        planner=FakePlanner(),
+        selector=FakeSelector(),
+        client=FakeClient(),
+        index=index,
+        retrieved_at=datetime(
+            2026,
+            9,
+            11,
+            12,
+            0,
+            tzinfo=UTC,
+        ),
+    )
+
+    assert run.summary.total_cases == 1
+    assert run.summary.completed_cases == 1
+    assert run.summary.failed_cases == 0
+    assert run.summary.completion_rate == 1.0
+    assert run.summary.dataset_accuracy == 1.0
+    assert run.summary.filters_accuracy == 1.0
+    assert run.summary.operation_accuracy == 1.0
+    assert run.summary.exact_match_accuracy == 1.0
+    assert run.results[0].answer.value == 123.0
+    assert run.results[0].answer.unit == "NR"
