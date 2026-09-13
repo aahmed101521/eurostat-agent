@@ -1,6 +1,14 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
+from eurostat_agent.catalogue import DatasetIndex
+from eurostat_agent.controller import (
+    ControllerClient,
+    DatasetSelector,
+    QuestionPlanner,
+    answer_planned_question,
+)
 from eurostat_agent.provenance import DeterministicAnswer
 
 
@@ -198,4 +206,31 @@ def run_benchmark(
         results=tuple(results),
         failures=tuple(failures),
         summary=summary,
+    )
+
+
+def run_controller_benchmark(
+    cases: tuple[BenchmarkCase, ...],
+    *,
+    planner: QuestionPlanner,
+    selector: DatasetSelector,
+    client: ControllerClient,
+    index: DatasetIndex,
+    retrieved_at: datetime,
+    limit: int = 10,
+) -> BenchmarkRun:
+    def answer_question(question: str) -> DeterministicAnswer:
+        return answer_planned_question(
+            planner,
+            selector,
+            client,
+            question,
+            index=index,
+            retrieved_at=retrieved_at,
+            limit=limit,
+        )
+
+    return run_benchmark(
+        cases,
+        answer_question,
     )

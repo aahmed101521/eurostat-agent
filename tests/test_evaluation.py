@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+import eurostat_agent.evaluation as evaluation
 from eurostat_agent.benchmark import CORE_BENCHMARK_CASES
 from eurostat_agent.evaluation import (
     BenchmarkCase,
@@ -782,3 +783,84 @@ def test_summarize_benchmark_scores_excludes_unscored_filters() -> None:
     summary = summarize_benchmark_scores(scores)
 
     assert summary.filters_accuracy == 0.0
+
+
+def test_run_controller_benchmark_routes_question_through_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = BenchmarkCase(
+        question="What was the population of women in Belgium in 2024?",
+        expected_dataset_code="DEMO_PJAN",
+        expected_filters=(),
+        expected_operation="none",
+    )
+
+    answer = DeterministicAnswer(
+        value=123.0,
+        unit="NR",
+        computation=ComputationProvenance(
+            operation="none",
+            input_values=(123.0,),
+            input_time_periods=("2024",),
+            input_dimensions=(),
+            output_value=123.0,
+        ),
+        provenance=RetrievalProvenance(
+            dataset_code="DEMO_PJAN",
+            dataset_agency="ESTAT",
+            dataset_version="72.0",
+            filters=(),
+            retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+            data_updated_at="2025-12-31",
+            source="Eurostat",
+            source_url="https://example.test",
+        ),
+    )
+
+    planner = object()
+    selector = object()
+    client = object()
+    index = object()
+    retrieved_at = datetime(2026, 1, 1, tzinfo=UTC)
+
+    calls: list[str] = []
+
+    def fake_answer_planned_question(
+        planner_arg: object,
+        selector_arg: object,
+        client_arg: object,
+        question: str,
+        *,
+        index: object,
+        retrieved_at: datetime,
+        limit: int = 10,
+    ) -> DeterministicAnswer:
+        assert planner_arg is planner
+        assert selector_arg is selector
+        assert client_arg is client
+        assert index is not None
+        assert retrieved_at == datetime(2026, 1, 1, tzinfo=UTC)
+        assert limit == 10
+
+        calls.append(question)
+        return answer
+
+    monkeypatch.setattr(
+        evaluation,
+        "answer_planned_question",
+        fake_answer_planned_question,
+        raising=False,
+    )
+
+    run = evaluation.run_controller_benchmark(
+        (case,),
+        planner=planner,
+        selector=selector,
+        client=client,
+        index=index,
+        retrieved_at=retrieved_at,
+    )
+
+    assert calls == ["What was the population of women in Belgium in 2024?"]
+    assert run.results[0].answer == answer
+    assert run.summary.completed_cases == 1
