@@ -1,4 +1,6 @@
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -24,6 +26,7 @@ from eurostat_agent.evaluation import (
     score_benchmark_case,
     score_deterministic_answer,
     summarize_benchmark_scores,
+    write_benchmark_report,
 )
 from eurostat_agent.metadata import (
     Code,
@@ -1904,3 +1907,50 @@ def test_benchmark_run_to_dict_includes_results() -> None:
             },
         }
     ]
+
+
+def test_write_benchmark_report_creates_json_file(
+    tmp_path: Path,
+) -> None:
+    summary = BenchmarkSummary(
+        total_cases=0,
+        completed_cases=0,
+        failed_cases=0,
+        completion_rate=0.0,
+        dataset_accuracy=0.0,
+        filters_accuracy=0.0,
+        operation_accuracy=0.0,
+        exact_match_accuracy=0.0,
+    )
+
+    run = BenchmarkRun(
+        results=(),
+        failures=(),
+        summary=summary,
+    )
+
+    report_path = tmp_path / "benchmark.json"
+
+    write_benchmark_report(
+        run,
+        report_path,
+    )
+
+    assert report_path.exists()
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert report == {
+        "summary": {
+            "total_cases": 0,
+            "completed_cases": 0,
+            "failed_cases": 0,
+            "completion_rate": 0.0,
+            "dataset_accuracy": 0.0,
+            "filters_accuracy": 0.0,
+            "operation_accuracy": 0.0,
+            "exact_match_accuracy": 0.0,
+        },
+        "results": [],
+        "failures": [],
+    }

@@ -1,6 +1,8 @@
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from eurostat_agent.catalogue import DatasetIndex
 from eurostat_agent.controller import (
@@ -121,6 +123,19 @@ def benchmark_run_to_dict(
         "results": [benchmark_result_to_dict(result) for result in run.results],
         "failures": [benchmark_failure_to_dict(failure) for failure in run.failures],
     }
+
+
+def write_benchmark_report(
+    run: BenchmarkRun,
+    path: Path,
+) -> None:
+    path.write_text(
+        json.dumps(
+            benchmark_run_to_dict(run),
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 def score_benchmark_case(
