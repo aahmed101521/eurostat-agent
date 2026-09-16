@@ -1,0 +1,326 @@
+import json
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+from eurostat_agent.catalogue import DatasetIndex
+from eurostat_agent.controller import (
+    ControllerClient,
+    DatasetSelector,
+    QuestionPlanner,
+    answer_planned_question,
+)
+from eurostat_agent.provenance import DeterministicAnswer
+
+
+@dataclass(frozen=True)
+class BenchmarkCase:
+    question: str
+    expected_dataset_code: str
+    expected_filters: tuple[tuple[str, str], ...]
+    expected_operation: str
+    score_filters: bool = True
+
+
+@dataclass(frozen=True)
+class BenchmarkScore:
+    dataset_match: bool
+    filters_match: bool
+    operation_match: bool
+    exact_match: bool
+    filters_scored: bool = True
+
+
+@dataclass(frozen=True)
+class BenchmarkResult:
+    case: BenchmarkCase
+    answer: DeterministicAnswer
+    score: BenchmarkScore
+
+
+@dataclass(frozen=True)
+class BenchmarkFailure:
+    case: BenchmarkCase
+    error_type: str
+    error_message: str
+
+
+@dataclass(frozen=True)
+class BenchmarkSummary:
+    total_cases: int
+    completed_cases: int
+    failed_cases: int
+    completion_rate: float
+    dataset_accuracy: float
+    filters_accuracy: float
+    operation_accuracy: float
+    exact_match_accuracy: float
+
+
+@dataclass(frozen=True)
+class BenchmarkRun:
+    results: tuple[BenchmarkResult, ...]
+    failures: tuple[BenchmarkFailure, ...]
+    summary: BenchmarkSummary
+
+
+def benchmark_case_to_dict(
+    case: BenchmarkCase,
+) -> dict[str, object]:
+    return {
+        "question": case.question,
+        "expected_dataset_code": case.expected_dataset_code,
+        "expected_filters": [
+            [dimension, code] for dimension, code in case.expected_filters
+        ],
+        "expected_operation": case.expected_operation,
+        "score_filters": case.score_filters,
+    }
+
+
+def benchmark_result_to_dict(
+    result: BenchmarkResult,
+) -> dict[str, object]:
+    return {
+        "case": benchmark_case_to_dict(result.case),
+        "score": {
+            "dataset_match": result.score.dataset_match,
+            "filters_match": result.score.filters_match,
+            "operation_match": result.score.operation_match,
+            "exact_match": result.score.exact_match,
+            "filters_scored": result.score.filters_scored,
+        },
+        "answer": {
+            "value": result.answer.value,
+            "unit": result.answer.unit,
+            "dataset_code": result.answer.provenance.dataset_code,
+            "filters": [
+                [dimension, code]
+                for dimension, code in result.answer.provenance.filters
+            ],
+            "operation": result.answer.computation.operation,
+        },
+    }
+
+
+def benchmark_failure_to_dict(
+    failure: BenchmarkFailure,
+) -> dict[str, object]:
+    return {
+        "case": benchmark_case_to_dict(failure.case),
+        "error_type": failure.error_type,
+        "error_message": failure.error_message,
+    }
+
+
+def benchmark_summary_to_dict(
+    summary: BenchmarkSummary,
+) -> dict[str, int | float]:
+    return {
+        "total_cases": summary.total_cases,
+        "completed_cases": summary.completed_cases,
+        "failed_cases": summary.failed_cases,
+        "completion_rate": summary.completion_rate,
+        "dataset_accuracy": summary.dataset_accuracy,
+        "filters_accuracy": summary.filters_accuracy,
+        "operation_accuracy": summary.operation_accuracy,
+        "exact_match_accuracy": summary.exact_match_accuracy,
+    }
+
+
+def benchmark_run_to_dict(
+    run: BenchmarkRun,
+) -> dict[str, object]:
+    return {
+        "schema_version": "1.0",
+        "summary": benchmark_summary_to_dict(run.summary),
+        "results": [benchmark_result_to_dict(result) for result in run.results],
+        "failures": [benchmark_failure_to_dict(failure) for failure in run.failures],
+    }
+
+
+def write_benchmark_report(
+    run: BenchmarkRun,
+    path: Path,
+) -> None:
+    path.write_text(
+        json.dumps(
+            benchmark_run_to_dict(run),
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def score_benchmark_case(
+    case: BenchmarkCase,
+    *,
+    actual_dataset_code: str,
+    actual_filters: tuple[tuple[str, str], ...],
+    actual_operation: str,
+) -> BenchmarkScore:
+    dataset_match = actual_dataset_code == case.expected_dataset_code
+
+    filters_match = (
+        True if not case.score_filters else actual_filters == case.expected_filters
+    )
+
+    operation_match = actual_operation == case.expected_operation
+
+    return BenchmarkScore(
+        dataset_match=dataset_match,
+        filters_match=filters_match,
+        operation_match=operation_match,
+        exact_match=(dataset_match and filters_match and operation_match),
+        filters_scored=case.score_filters,
+    )
+
+
+def score_deterministic_answer(
+    case: BenchmarkCase,
+    answer: DeterministicAnswer,
+) -> BenchmarkScore:
+    return score_benchmark_case(
+        case,
+        actual_dataset_code=answer.provenance.dataset_code,
+        actual_filters=answer.provenance.filters,
+        actual_operation=answer.computation.operation,
+    )
+
+
+def build_benchmark_result(
+    case: BenchmarkCase,
+    answer: DeterministicAnswer,
+) -> BenchmarkResult:
+    return BenchmarkResult(
+        case=case,
+        answer=answer,
+        score=score_deterministic_answer(
+            case,
+            answer,
+        ),
+    )
+
+
+def summarize_benchmark_scores(
+    scores: tuple[BenchmarkScore, ...],
+) -> BenchmarkSummary:
+    total_cases = len(scores)
+
+    if total_cases == 0:
+        raise ValueError("Cannot summarize an empty benchmark.")
+
+    scored_filters = tuple(score for score in scores if score.filters_scored)
+
+    filters_accuracy = (
+        sum(score.filters_match for score in scored_filters) / len(scored_filters)
+        if scored_filters
+        else 0.0
+    )
+
+    return BenchmarkSummary(
+        total_cases=total_cases,
+        completed_cases=total_cases,
+        failed_cases=0,
+        completion_rate=1.0,
+        dataset_accuracy=(sum(score.dataset_match for score in scores) / total_cases),
+        filters_accuracy=filters_accuracy,
+        operation_accuracy=(
+            sum(score.operation_match for score in scores) / total_cases
+        ),
+        exact_match_accuracy=(sum(score.exact_match for score in scores) / total_cases),
+    )
+
+
+def run_benchmark(
+    cases: tuple[BenchmarkCase, ...],
+    answer_question: Callable[[str], DeterministicAnswer],
+) -> BenchmarkRun:
+    results: list[BenchmarkResult] = []
+    failures: list[BenchmarkFailure] = []
+
+    for case in cases:
+        try:
+            answer = answer_question(case.question)
+        except Exception as exc:
+            failures.append(
+                BenchmarkFailure(
+                    case=case,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+            )
+            continue
+
+        results.append(
+            build_benchmark_result(
+                case,
+                answer,
+            )
+        )
+
+    completed_cases = len(results)
+    failed_cases = len(failures)
+    total_cases = len(cases)
+
+    completion_rate = completed_cases / total_cases if total_cases else 0.0
+
+    if completed_cases == 0:
+        dataset_accuracy = 0.0
+        filters_accuracy = 0.0
+        operation_accuracy = 0.0
+        exact_match_accuracy = 0.0
+    else:
+        score_summary = summarize_benchmark_scores(
+            tuple(result.score for result in results)
+        )
+
+        dataset_accuracy = score_summary.dataset_accuracy
+        filters_accuracy = score_summary.filters_accuracy
+        operation_accuracy = score_summary.operation_accuracy
+        exact_match_accuracy = score_summary.exact_match_accuracy
+
+    summary = BenchmarkSummary(
+        total_cases=total_cases,
+        completed_cases=completed_cases,
+        failed_cases=failed_cases,
+        completion_rate=completion_rate,
+        dataset_accuracy=dataset_accuracy,
+        filters_accuracy=filters_accuracy,
+        operation_accuracy=operation_accuracy,
+        exact_match_accuracy=exact_match_accuracy,
+    )
+
+    return BenchmarkRun(
+        results=tuple(results),
+        failures=tuple(failures),
+        summary=summary,
+    )
+
+
+def run_controller_benchmark(
+    cases: tuple[BenchmarkCase, ...],
+    *,
+    planner: QuestionPlanner,
+    selector: DatasetSelector,
+    client: ControllerClient,
+    index: DatasetIndex,
+    retrieved_at: datetime,
+    limit: int = 10,
+) -> BenchmarkRun:
+    def answer_question(question: str) -> DeterministicAnswer:
+        return answer_planned_question(
+            planner,
+            selector,
+            client,
+            question,
+            index=index,
+            retrieved_at=retrieved_at,
+            limit=limit,
+        )
+
+    return run_benchmark(
+        cases,
+        answer_question,
+    )
