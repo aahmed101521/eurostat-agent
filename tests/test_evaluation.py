@@ -1658,6 +1658,7 @@ def test_benchmark_run_to_dict_returns_stable_top_level_shape() -> None:
     )
 
     assert benchmark_run_to_dict(run) == {
+        "schema_version": "1.0",
         "summary": {
             "total_cases": 0,
             "completed_cases": 0,
@@ -1854,14 +1855,24 @@ def test_benchmark_run_to_dict_includes_results() -> None:
             dataset_agency="ESTAT",
             dataset_version="72.0",
             filters=(("TIME_PERIOD", "2024"),),
-            retrieved_at=datetime(2026, 9, 11, 12, 0, tzinfo=UTC),
+            retrieved_at=datetime(
+                2026,
+                9,
+                11,
+                12,
+                0,
+                tzinfo=UTC,
+            ),
             data_updated_at="2026-08-14T23:00:00+0200",
             source="Eurostat",
             source_url="https://example.test",
         ),
     )
 
-    result = build_benchmark_result(case, answer)
+    result = build_benchmark_result(
+        case,
+        answer,
+    )
 
     summary = BenchmarkSummary(
         total_cases=1,
@@ -1941,6 +1952,7 @@ def test_write_benchmark_report_creates_json_file(
     report = json.loads(report_path.read_text(encoding="utf-8"))
 
     assert report == {
+        "schema_version": "1.0",
         "summary": {
             "total_cases": 0,
             "completed_cases": 0,
@@ -1954,3 +1966,26 @@ def test_write_benchmark_report_creates_json_file(
         "results": [],
         "failures": [],
     }
+
+
+def test_benchmark_run_to_dict_includes_schema_version() -> None:
+    summary = BenchmarkSummary(
+        total_cases=0,
+        completed_cases=0,
+        failed_cases=0,
+        completion_rate=0.0,
+        dataset_accuracy=0.0,
+        filters_accuracy=0.0,
+        operation_accuracy=0.0,
+        exact_match_accuracy=0.0,
+    )
+
+    run = BenchmarkRun(
+        results=(),
+        failures=(),
+        summary=summary,
+    )
+
+    report = benchmark_run_to_dict(run)
+
+    assert report["schema_version"] == "1.0"

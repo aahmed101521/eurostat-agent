@@ -39,6 +39,46 @@ class BenchmarkResult:
     score: BenchmarkScore
 
 
+@dataclass(frozen=True)
+class BenchmarkFailure:
+    case: BenchmarkCase
+    error_type: str
+    error_message: str
+
+
+@dataclass(frozen=True)
+class BenchmarkSummary:
+    total_cases: int
+    completed_cases: int
+    failed_cases: int
+    completion_rate: float
+    dataset_accuracy: float
+    filters_accuracy: float
+    operation_accuracy: float
+    exact_match_accuracy: float
+
+
+@dataclass(frozen=True)
+class BenchmarkRun:
+    results: tuple[BenchmarkResult, ...]
+    failures: tuple[BenchmarkFailure, ...]
+    summary: BenchmarkSummary
+
+
+def benchmark_case_to_dict(
+    case: BenchmarkCase,
+) -> dict[str, object]:
+    return {
+        "question": case.question,
+        "expected_dataset_code": case.expected_dataset_code,
+        "expected_filters": [
+            [dimension, code] for dimension, code in case.expected_filters
+        ],
+        "expected_operation": case.expected_operation,
+        "score_filters": case.score_filters,
+    }
+
+
 def benchmark_result_to_dict(
     result: BenchmarkResult,
 ) -> dict[str, object]:
@@ -64,13 +104,6 @@ def benchmark_result_to_dict(
     }
 
 
-@dataclass(frozen=True)
-class BenchmarkFailure:
-    case: BenchmarkCase
-    error_type: str
-    error_message: str
-
-
 def benchmark_failure_to_dict(
     failure: BenchmarkFailure,
 ) -> dict[str, object]:
@@ -79,18 +112,6 @@ def benchmark_failure_to_dict(
         "error_type": failure.error_type,
         "error_message": failure.error_message,
     }
-
-
-@dataclass(frozen=True)
-class BenchmarkSummary:
-    total_cases: int
-    completed_cases: int
-    failed_cases: int
-    completion_rate: float
-    dataset_accuracy: float
-    filters_accuracy: float
-    operation_accuracy: float
-    exact_match_accuracy: float
 
 
 def benchmark_summary_to_dict(
@@ -108,17 +129,11 @@ def benchmark_summary_to_dict(
     }
 
 
-@dataclass(frozen=True)
-class BenchmarkRun:
-    results: tuple[BenchmarkResult, ...]
-    failures: tuple[BenchmarkFailure, ...]
-    summary: BenchmarkSummary
-
-
 def benchmark_run_to_dict(
     run: BenchmarkRun,
 ) -> dict[str, object]:
     return {
+        "schema_version": "1.0",
         "summary": benchmark_summary_to_dict(run.summary),
         "results": [benchmark_result_to_dict(result) for result in run.results],
         "failures": [benchmark_failure_to_dict(failure) for failure in run.failures],
@@ -186,20 +201,6 @@ def build_benchmark_result(
             answer,
         ),
     )
-
-
-def benchmark_case_to_dict(
-    case: BenchmarkCase,
-) -> dict[str, object]:
-    return {
-        "question": case.question,
-        "expected_dataset_code": case.expected_dataset_code,
-        "expected_filters": [
-            [dimension, code] for dimension, code in case.expected_filters
-        ],
-        "expected_operation": case.expected_operation,
-        "score_filters": case.score_filters,
-    }
 
 
 def summarize_benchmark_scores(
