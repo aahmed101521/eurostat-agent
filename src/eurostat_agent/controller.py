@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -20,6 +21,7 @@ from eurostat_agent.resolution import (
     MetadataClient,
     resolve_dataset_dimension_code,
 )
+from eurostat_agent.tracing import TraceRecorder
 
 
 class ControllerClient(MetadataClient, RetrievalClient, Protocol):
@@ -167,7 +169,6 @@ def resolve_question_filters(
             dimension_id,
             text,
         )
-
         resolved_filters[dimension_id] = resolution.code.id
 
     return resolved_filters
@@ -222,22 +223,111 @@ def answer_planned_question(
     index: DatasetIndex,
     retrieved_at: datetime,
     limit: int = 10,
+    trace_recorder: TraceRecorder | None = None,
+    planning_metadata: tuple[tuple[str, str], ...] = (),
+    selection_metadata: tuple[tuple[str, str], ...] = (),
 ) -> DeterministicAnswer:
-    plan = create_question_plan(
-        planner,
-        question,
+    total_stage = (
+        trace_recorder.stage("controller_total")
+        if trace_recorder is not None
+        else nullcontext()
     )
 
-    structured_question = materialize_question_plan(
-        selector,
-        plan,
-        question=question,
-        index=index,
-        limit=limit,
-    )
+    with total_stage:
+        planning_stage = (
+            trace_recorder.stage("planning", metadata=planning_metadata)
+            if trace_recorder is not None
+            else nullcontext()
+        )
+        with planning_stage:
+            plan = create_question_plan(
+                planner,
+                question,
+            )
 
-    return execute_question(
-        client,
-        structured_question,
-        retrieved_at=retrieved_at,
-    )
+        catalogue_stage = (
+            trace_recorder.stage("catalogue_search")
+            if trace_recorder is not None
+            else nullcontext()
+        )
+        with catalogue_stage:
+            search_results = discover_dataset_candidates(
+                plan.dataset_query,
+                index=index,
+                limit=limit,
+            )
+
+        candidates = tuple(result.record for result in search_results)
+        candidate_metadata = (
+            ("candidate_count", str(len(candidates))),
+            *selection_metadata,
+        )
+        selection_stage = (
+            trace_recorder.stage(
+                "dataset_selection",
+                metadata=candidate_metadata,
+            )
+            if trace_recorder is not None
+            else nullcontext()
+        )
+        with selection_stage:
+            if not candidates:
+                raise ValueError("No dataset candidates were found.")
+
+            dataset = select_dataset_candidate(
+                selector,
+                question,
+                candidates,
+            )
+
+        structured_question = build_structured_question(
+            plan,
+            dataset,
+        )
+
+        resolution_stage = (
+            trace_recorder.stage(
+                "filter_resolution",
+                metadata=(("dataset", structured_question.dataset_code),),
+            )
+            if trace_recorder is not None
+            else nullcontext()
+        )
+        with resolution_stage:
+            resolved_filters = resolve_question_filters(
+                client,
+                structured_question,
+            )
+
+        retrieval_stage = (
+            trace_recorder.stage(
+                "retrieval",
+                metadata=(("dataset", structured_question.dataset_code),),
+            )
+            if trace_recorder is not None
+            else nullcontext()
+        )
+        with retrieval_stage:
+            retrieval = retrieve_with_provenance(
+                client,
+                dataset_code=structured_question.dataset_code,
+                filters=resolved_filters,
+                retrieved_at=retrieved_at,
+            )
+
+        computation_stage = (
+            trace_recorder.stage(
+                "computation",
+                metadata=(("operation", structured_question.operation),),
+            )
+            if trace_recorder is not None
+            else nullcontext()
+        )
+        with computation_stage:
+            if structured_question.operation == "none":
+                return build_deterministic_answer(retrieval)
+
+            return build_computed_answer(
+                retrieval,
+                operation=structured_question.operation,
+            )
