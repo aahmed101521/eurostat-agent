@@ -177,6 +177,45 @@ def score_benchmark_case(
     )
 
 
+def effective_answer_filters(
+    answer: DeterministicAnswer,
+    expected_filters: tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...]:
+    """Complete expected filter context from deterministic observations."""
+
+    effective = dict(answer.provenance.filters)
+
+    expected_dimensions = {dimension for dimension, _ in expected_filters}
+
+    missing_dimensions = expected_dimensions - effective.keys()
+
+    if "TIME_PERIOD" in missing_dimensions and answer.computation.input_time_periods:
+        unique_time_periods = set(answer.computation.input_time_periods)
+
+        if len(unique_time_periods) == 1:
+            effective["TIME_PERIOD"] = next(iter(unique_time_periods))
+
+    observed_dimensions = missing_dimensions - {"TIME_PERIOD"}
+
+    if observed_dimensions and answer.computation.input_dimensions:
+        dimension_maps = tuple(
+            dict(dimensions) for dimensions in answer.computation.input_dimensions
+        )
+
+        for dimension in observed_dimensions:
+            values = {dimensions.get(dimension) for dimensions in dimension_maps}
+
+            if len(values) != 1:
+                continue
+
+            value = next(iter(values))
+
+            if value is not None:
+                effective[dimension] = value
+
+    return tuple(sorted(effective.items()))
+
+
 def score_deterministic_answer(
     case: BenchmarkCase,
     answer: DeterministicAnswer,
@@ -184,7 +223,10 @@ def score_deterministic_answer(
     return score_benchmark_case(
         case,
         actual_dataset_code=answer.provenance.dataset_code,
-        actual_filters=answer.provenance.filters,
+        actual_filters=effective_answer_filters(
+            answer,
+            case.expected_filters,
+        ),
         actual_operation=answer.computation.operation,
     )
 

@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from eurostat_agent.evaluation import BenchmarkRun, benchmark_summary_to_dict
+from eurostat_agent.evaluation import (
+    BenchmarkRun,
+    benchmark_run_to_dict,
+    benchmark_summary_to_dict,
+)
 from eurostat_agent.judge import JudgeRun, JudgeRunSummary
 
 
@@ -79,6 +83,7 @@ def experiment_result_to_dict(
         "model": result.config.model,
         "prompt_variant": result.config.prompt_variant,
         "benchmark": benchmark_summary_to_dict(result.benchmark_run.summary),
+        "benchmark_run": benchmark_run_to_dict(result.benchmark_run),
         "judge": judge_summary,
     }
 

@@ -384,3 +384,60 @@ def test_openai_compatible_model_drives_safe_controller_path() -> None:
     assert answer.unit == "NR"
     assert answer.computation.operation == "none"
     assert answer.provenance.dataset_code == "DEMO_PJAN"
+
+
+def test_openai_compatible_model_sends_request_options() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read().decode())
+
+        assert payload["model"] == "test-model"
+        assert payload["temperature"] == 0.0
+        assert payload["seed"] == 42
+
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"ok":true}',
+                        }
+                    }
+                ],
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+
+    with httpx.Client(transport=transport) as http_client:
+        model = OpenAICompatibleModel(
+            base_url="https://example.test/v1",
+            api_key="test-key",
+            model="test-model",
+            http_client=http_client,
+            request_options={
+                "temperature": 0.0,
+                "seed": 42,
+            },
+        )
+
+        result = model.complete("Return JSON.")
+
+    assert result == '{"ok":true}'
+
+
+def test_openai_compatible_model_rejects_reserved_request_options() -> None:
+    with httpx.Client() as http_client:
+        with pytest.raises(
+            ValueError,
+            match="must not override model or messages",
+        ):
+            OpenAICompatibleModel(
+                base_url="https://example.test/v1",
+                api_key="test-key",
+                model="test-model",
+                http_client=http_client,
+                request_options={
+                    "model": "different-model",
+                },
+            )
