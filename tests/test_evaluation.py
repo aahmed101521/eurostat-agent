@@ -22,6 +22,7 @@ from eurostat_agent.evaluation import (
     benchmark_run_to_dict,
     benchmark_summary_to_dict,
     build_benchmark_result,
+    effective_answer_filters,
     run_benchmark,
     score_benchmark_case,
     score_deterministic_answer,
@@ -1989,3 +1990,122 @@ def test_benchmark_run_to_dict_includes_schema_version() -> None:
     report = benchmark_run_to_dict(run)
 
     assert report["schema_version"] == "1.0"
+
+
+def test_effective_answer_filters_include_expected_observed_dimensions() -> None:
+    answer = DeterministicAnswer(
+        value=65231.0,
+        unit="NR",
+        computation=ComputationProvenance(
+            operation="none",
+            input_values=(65231.0,),
+            input_time_periods=("2024",),
+            input_dimensions=(
+                (
+                    ("age", "Y20"),
+                    ("freq", "A"),
+                    ("geo", "BE"),
+                    ("sex", "F"),
+                    ("unit", "NR"),
+                ),
+            ),
+            output_value=65231.0,
+        ),
+        provenance=RetrievalProvenance(
+            dataset_code="DEMO_PJAN",
+            dataset_agency="ESTAT",
+            dataset_version="72.0",
+            filters=(
+                ("TIME_PERIOD", "2024"),
+                ("age", "Y20"),
+                ("geo", "BE"),
+                ("sex", "F"),
+            ),
+            retrieved_at=datetime(
+                2026,
+                9,
+                17,
+                0,
+                0,
+                tzinfo=UTC,
+            ),
+            data_updated_at="2026-08-14T23:00:00+0200",
+            source="Eurostat SDMX 3.0",
+            source_url=(
+                "https://ec.europa.eu/eurostat/api/dissemination/"
+                "sdmx/3.0/data/dataflow/ESTAT/DEMO_PJAN/72.0"
+            ),
+        ),
+    )
+
+    expected_filters = (
+        ("TIME_PERIOD", "2024"),
+        ("age", "Y20"),
+        ("freq", "A"),
+        ("geo", "BE"),
+        ("sex", "F"),
+        ("unit", "NR"),
+    )
+
+    assert (
+        effective_answer_filters(
+            answer,
+            expected_filters,
+        )
+        == expected_filters
+    )
+
+
+def test_effective_answer_filters_ignore_unexpected_observed_dimensions() -> None:
+    answer = DeterministicAnswer(
+        value=123.0,
+        unit="NR",
+        computation=ComputationProvenance(
+            operation="none",
+            input_values=(123.0,),
+            input_time_periods=("2024",),
+            input_dimensions=(
+                (
+                    ("geo", "BE"),
+                    ("sex", "F"),
+                    ("unit", "NR"),
+                ),
+            ),
+            output_value=123.0,
+        ),
+        provenance=RetrievalProvenance(
+            dataset_code="DEMO_PJAN",
+            dataset_agency="ESTAT",
+            dataset_version="1.0",
+            filters=(
+                ("TIME_PERIOD", "2024"),
+                ("geo", "BE"),
+                ("sex", "F"),
+            ),
+            retrieved_at=datetime(
+                2026,
+                9,
+                17,
+                0,
+                0,
+                tzinfo=UTC,
+            ),
+            data_updated_at="2026-08-14T23:00:00+0200",
+            source="Eurostat",
+            source_url="https://ec.europa.eu/eurostat/",
+        ),
+    )
+
+    expected_filters = (
+        ("TIME_PERIOD", "2024"),
+        ("geo", "BE"),
+        ("sex", "F"),
+    )
+
+    assert (
+        effective_answer_filters(
+            answer,
+            expected_filters,
+        )
+        == expected_filters
+    )

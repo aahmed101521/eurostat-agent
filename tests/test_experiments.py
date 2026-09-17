@@ -273,6 +273,21 @@ def test_experiment_report_exposes_comparable_metrics_without_ranking() -> None:
             "operation_accuracy": 1.0,
             "exact_match_accuracy": 0.75,
         },
+        "benchmark_run": {
+            "schema_version": "1.0",
+            "summary": {
+                "total_cases": 4,
+                "completed_cases": 4,
+                "failed_cases": 0,
+                "completion_rate": 1.0,
+                "dataset_accuracy": 1.0,
+                "filters_accuracy": 0.75,
+                "operation_accuracy": 1.0,
+                "exact_match_accuracy": 0.75,
+            },
+            "results": [],
+            "failures": [],
+        },
         "judge": {
             "total_cases": 4,
             "completed_cases": 4,

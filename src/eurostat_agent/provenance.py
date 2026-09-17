@@ -81,7 +81,8 @@ def build_retrieval_provenance(
     retrieved_at: datetime,
 ) -> RetrievalProvenance:
     """Build canonical provenance for one Eurostat retrieval."""
-    if metadata.id != dataset_code:
+
+    if metadata.id.casefold() != dataset_code.casefold():
         raise ValueError(
             f"Dataset metadata {metadata.id!r} does not match "
             f"requested dataset {dataset_code!r}."
@@ -90,13 +91,16 @@ def build_retrieval_provenance(
     if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
         raise ValueError("Retrieval timestamp must be timezone-aware.")
 
+    canonical_dataset_code = metadata.id
+
     source_url = (
         "https://ec.europa.eu/eurostat/api/dissemination/sdmx/3.0/"
-        f"data/dataflow/{metadata.agency}/{dataset_code}/{metadata.version}"
+        f"data/dataflow/{metadata.agency}/"
+        f"{canonical_dataset_code}/{metadata.version}"
     )
 
     return RetrievalProvenance(
-        dataset_code=dataset_code,
+        dataset_code=canonical_dataset_code,
         dataset_agency=metadata.agency,
         dataset_version=metadata.version,
         filters=tuple(sorted(filters.items())),
@@ -112,6 +116,7 @@ def _observation_filter_value(
     dimension: str,
 ) -> str | None:
     """Return an observation value for one provenance filter."""
+
     if dimension == "TIME_PERIOD":
         return observation.time_period
 
@@ -122,6 +127,7 @@ def _canonical_dimensions(
     observation: Observation,
 ) -> tuple[tuple[str, str], ...]:
     """Return one observation's dimensions in deterministic order."""
+
     return tuple(sorted(observation.dimensions.items()))
 
 
@@ -131,8 +137,9 @@ def build_retrieval_result(
     provenance: RetrievalProvenance,
 ) -> RetrievalResult:
     """Bind retrieved observations to validated retrieval provenance."""
+
     for observation in observations:
-        if observation.dataset_code != provenance.dataset_code:
+        if observation.dataset_code.casefold() != provenance.dataset_code.casefold():
             raise ValueError(
                 f"Observation dataset {observation.dataset_code!r} "
                 f"does not match provenance dataset "
@@ -166,6 +173,7 @@ def retrieve_with_provenance(
     retrieved_at: datetime,
 ) -> RetrievalResult:
     """Retrieve Eurostat observations together with validated provenance."""
+
     metadata = client.get_dataset_metadata(dataset_code)
 
     observations = client.fetch_series(
@@ -190,6 +198,7 @@ def build_deterministic_answer(
     retrieval: RetrievalResult,
 ) -> DeterministicAnswer:
     """Build an answer from one directly retrieved observation."""
+
     if len(retrieval.observations) != 1:
         raise ValueError(
             "A direct deterministic answer requires exactly one observation."
@@ -224,6 +233,7 @@ def build_computed_answer(
     operation: str,
 ) -> DeterministicAnswer:
     """Build an answer by applying a deterministic computation."""
+
     if operation not in {
         "sum",
         "difference",
@@ -272,6 +282,7 @@ def build_computed_answer(
             )
 
         output_value = input_values[0] - input_values[1]
+
         output_unit = first_unit
 
     elif operation == "ratio":
@@ -282,6 +293,7 @@ def build_computed_answer(
             raise ValueError("A ratio computation denominator must not be zero.")
 
         output_value = input_values[0] / input_values[1]
+
         output_unit = "ratio"
 
     else:
@@ -296,6 +308,7 @@ def build_computed_answer(
             )
 
         output_value = ((input_values[0] - input_values[1]) / input_values[1]) * 100
+
         output_unit = "percent"
 
     computation = ComputationProvenance(

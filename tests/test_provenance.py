@@ -5,6 +5,7 @@ import pytest
 from eurostat_agent.data import Observation
 from eurostat_agent.metadata import DatasetMetadata
 from eurostat_agent.provenance import (
+    RetrievalProvenance,
     build_computed_answer,
     build_deterministic_answer,
     build_retrieval_provenance,
@@ -1078,3 +1079,53 @@ def test_build_computed_answer_percentage_change_rejects_zero_baseline() -> None
             retrieval,
             operation="percentage_change",
         )
+
+
+def test_build_retrieval_provenance_canonicalizes_dataset_code_case() -> None:
+    metadata = DatasetMetadata(
+        id="DEMO_PJAN",
+        agency="ESTAT",
+        version="72.0",
+        data_updated_at="2026-08-14T23:00:00+0200",
+    )
+
+    provenance = build_retrieval_provenance(
+        dataset_code="demo_pjan",
+        filters={"TIME_PERIOD": "2024"},
+        metadata=metadata,
+        retrieved_at=datetime.fromisoformat("2026-09-17T00:00:00+00:00"),
+    )
+
+    assert provenance.dataset_code == "DEMO_PJAN"
+    assert provenance.source_url.endswith("/ESTAT/DEMO_PJAN/72.0")
+
+
+def test_build_retrieval_result_accepts_dataset_code_case_variant() -> None:
+    provenance = RetrievalProvenance(
+        dataset_code="DEMO_PJAN",
+        dataset_agency="ESTAT",
+        dataset_version="72.0",
+        filters=(("TIME_PERIOD", "2024"),),
+        retrieved_at=datetime.fromisoformat("2026-09-17T00:00:00+00:00"),
+        data_updated_at="2026-08-14T23:00:00+0200",
+        source="Eurostat SDMX 3.0",
+        source_url=(
+            "https://ec.europa.eu/eurostat/api/dissemination/"
+            "sdmx/3.0/data/dataflow/ESTAT/DEMO_PJAN/72.0"
+        ),
+    )
+
+    observation = Observation(
+        dataset_code="demo_pjan",
+        dimensions={"unit": "NR"},
+        time_period="2024",
+        value=65231.0,
+    )
+
+    result = build_retrieval_result(
+        observations=(observation,),
+        provenance=provenance,
+    )
+
+    assert result.observations == (observation,)
+    assert result.provenance.dataset_code == "DEMO_PJAN"
